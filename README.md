@@ -8,7 +8,8 @@ without losing reasoning, tool calls or signatures.
 > travellers and made every language understood. English got *dragoman* from it.
 > In the old *diwan*, the register office, the tarjuman was the one who spoke to everyone.
 
-**Status:** design locked, nothing implemented yet. Tarjuman is the provider layer of
+**Status:** v0 works: the neutral format, the OpenAI Chat Completions protocol (OpenRouter,
+OpenAI, vLLM and other compatible servers), streaming, stable errors. Anthropic Messages is next. Tarjuman is the provider layer of
 [Diwan](https://github.com/Zine-Elabidine/diwan), but knows nothing about it and is meant to be
 used on its own.
 
