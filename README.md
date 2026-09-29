@@ -8,8 +8,10 @@ without losing reasoning, tool calls or signatures.
 > travellers and made every language understood. English got *dragoman* from it.
 > In the old *diwan*, the register office, the tarjuman was the one who spoke to everyone.
 
-**Status:** v0 works: the neutral format, the OpenAI Chat Completions protocol (OpenRouter,
-OpenAI, vLLM and other compatible servers), streaming, stable errors. Anthropic Messages is next. Tarjuman is the provider layer of
+**Status:** two protocols work: OpenAI Chat Completions (OpenRouter, OpenAI, DeepSeek, vLLM
+and other compatible servers) and Anthropic Messages, with switching between them mid-conversation
+(thinking signatures kept, foreign reasoning sent as text). The format is specified in
+[docs/format.md](docs/format.md). Next: the compat table and a catalog from models.dev. Tarjuman is the provider layer of
 [Diwan](https://github.com/Zine-Elabidine/diwan), but knows nothing about it and is meant to be
 used on its own.
 

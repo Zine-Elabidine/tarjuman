@@ -5,7 +5,16 @@ from __future__ import annotations
 import os
 
 from . import errors
+from .anthropic import Anthropic
 from .openai_chat import OpenAIChat
+
+
+def anthropic(api_key: str | None = None, **kw) -> Anthropic:
+    key = api_key or os.environ.get("ANTHROPIC_API_KEY")
+    if not key:
+        raise errors.TarjumanError(errors.INVALID_CREDENTIAL,
+                                   "set ANTHROPIC_API_KEY (https://console.anthropic.com)")
+    return Anthropic(key, **kw)
 
 
 def openrouter(api_key: str | None = None, **kw) -> OpenAIChat:

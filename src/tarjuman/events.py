@@ -11,7 +11,9 @@ from .types import Block, Message
 @dataclass
 class BlockStart:
     index: int
-    kind: Literal["text", "reasoning", "tool_call"]
+    # every block of the final message is announced, so indices are positions in its content;
+    # "unknown" = a provider block we don't model (kept in the message, has no deltas)
+    kind: Literal["text", "reasoning", "tool_call", "unknown"]
     id: str | None = None      # tool calls only
     name: str | None = None    # tool calls only
 

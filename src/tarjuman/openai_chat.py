@@ -129,7 +129,9 @@ class OpenAIChat:
                     *[self._image(i) for i in images]]})
             return out
         if m.role == "assistant":
-            msg: dict[str, Any] = {"role": "assistant", "content": m.text or None}
+            # separate blocks (another model's thinking turned into text, then the answer)
+            text = "\n\n".join(b.text for b in m.content if isinstance(b, Text))
+            msg: dict[str, Any] = {"role": "assistant", "content": text or None}
             if self.reasoning_field:  # after the transform, reasoning left here is the model's own
                 thought = "".join(b.text for b in m.content if isinstance(b, Reasoning))
                 if thought:
