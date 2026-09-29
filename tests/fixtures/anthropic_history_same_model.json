@@ -1,0 +1,228 @@
+{
+ "kind": "wire",
+ "protocol": "anthropic-messages",
+ "options": {
+  "provider": "anthropic"
+ },
+ "request": {
+  "v": 1,
+  "model": "claude-x",
+  "tool_choice": "auto",
+  "reasoning": "high",
+  "cache": "short",
+  "messages": [
+   {
+    "v": 1,
+    "role": "system",
+    "content": [
+     {
+      "text": "You are Diwan.",
+      "type": "text"
+     }
+    ]
+   },
+   {
+    "v": 1,
+    "role": "user",
+    "content": [
+     {
+      "text": "hi",
+      "type": "text"
+     }
+    ]
+   },
+   {
+    "v": 1,
+    "role": "assistant",
+    "content": [
+     {
+      "text": "I should read it.",
+      "type": "reasoning"
+     },
+     {
+      "text": "Reading.",
+      "type": "text"
+     },
+     {
+      "id": "toolu_01",
+      "name": "read",
+      "arguments": "{\"path\": \"a.py\"}",
+      "type": "tool_call"
+     }
+    ],
+    "provider": "anthropic",
+    "protocol": "anthropic-messages",
+    "model": "claude-x",
+    "stop": "tool_use",
+    "replay": {
+     "response": {
+      "id": "msg_01"
+     },
+     "blocks": [
+      {
+       "signature": "EqQBsig"
+      },
+      null,
+      null
+     ]
+    }
+   },
+   {
+    "v": 1,
+    "role": "tool",
+    "content": [
+     {
+      "type": "tool_result",
+      "call_id": "toolu_01",
+      "content": [
+       {
+        "text": "print(1)",
+        "type": "text"
+       }
+      ],
+      "is_error": false
+     }
+    ]
+   },
+   {
+    "v": 1,
+    "role": "system",
+    "content": [
+     {
+      "text": "80% of the budget used",
+      "type": "text"
+     }
+    ]
+   },
+   {
+    "v": 1,
+    "role": "user",
+    "content": [
+     {
+      "text": "keep going",
+      "type": "text"
+     }
+    ]
+   }
+  ],
+  "tools": [
+   {
+    "name": "read",
+    "description": "Read a file",
+    "parameters": {
+     "type": "object",
+     "properties": {
+      "path": {
+       "type": "string"
+      }
+     },
+     "required": [
+      "path"
+     ]
+    },
+    "strict": false
+   }
+  ]
+ },
+ "expected_body": {
+  "model": "claude-x",
+  "messages": [
+   {
+    "role": "user",
+    "content": [
+     {
+      "type": "text",
+      "text": "hi"
+     }
+    ]
+   },
+   {
+    "role": "assistant",
+    "content": [
+     {
+      "type": "thinking",
+      "thinking": "I should read it.",
+      "signature": "EqQBsig"
+     },
+     {
+      "type": "text",
+      "text": "Reading."
+     },
+     {
+      "type": "tool_use",
+      "id": "toolu_01",
+      "name": "read",
+      "input": {
+       "path": "a.py"
+      }
+     }
+    ]
+   },
+   {
+    "role": "user",
+    "content": [
+     {
+      "type": "tool_result",
+      "tool_use_id": "toolu_01",
+      "is_error": false,
+      "content": [
+       {
+        "type": "text",
+        "text": "print(1)"
+       }
+      ]
+     },
+     {
+      "type": "text",
+      "text": "<system-reminder>\n80% of the budget used\n</system-reminder>"
+     },
+     {
+      "type": "text",
+      "text": "keep going",
+      "cache_control": {
+       "type": "ephemeral"
+      }
+     }
+    ]
+   }
+  ],
+  "stream": true,
+  "max_tokens": 8192,
+  "system": [
+   {
+    "type": "text",
+    "text": "You are Diwan.",
+    "cache_control": {
+     "type": "ephemeral"
+    }
+   }
+  ],
+  "tools": [
+   {
+    "name": "read",
+    "description": "Read a file",
+    "input_schema": {
+     "type": "object",
+     "properties": {
+      "path": {
+       "type": "string"
+      }
+     },
+     "required": [
+      "path"
+     ]
+    },
+    "cache_control": {
+     "type": "ephemeral"
+    }
+   }
+  ],
+  "thinking": {
+   "type": "adaptive",
+   "display": "summarized"
+  },
+  "output_config": {
+   "effort": "high"
+  }
+ }
+}

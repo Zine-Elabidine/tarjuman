@@ -9,7 +9,7 @@ from typing import Any
 
 import httpx
 
-from . import errors
+from . import catalog, errors
 from .events import BlockEnd, BlockStart, Event, Finish, ReasoningDelta, TextDelta, ToolCallDelta
 from .transform import Target, prepare
 from .types import (Image, Message, Reasoning, Replay, Request, Text, Tool, ToolCall,
@@ -20,14 +20,21 @@ PROTOCOL = "openai-chat"
 _STOPS = {"stop": "end", "tool_calls": "tool_use", "function_call": "tool_use",
           "length": "max_tokens", "content_filter": "refusal"}
 
-# How each dialect turns reasoning on. Until the catalog knows each model's levels, a level
-# the dialect lacks goes to the nearest one.
-_EFFORT = {"off": "minimal", "minimal": "minimal", "low": "low", "medium": "medium",
-           "high": "high", "max": "high"}
+# How each dialect turns reasoning on, given a level the model accepts. The level comes from
+# the catalog (the nearest one the model lists); for models it doesn't know, from FALLBACK.
 REASONING_STYLES: dict[str, Callable[[str], dict[str, Any]]] = {
-    "openai": lambda level: {"reasoning_effort": _EFFORT[level]},
-    "openrouter": lambda level: ({"reasoning": {"enabled": False}} if level == "off"
-                                 else {"reasoning": {"effort": _EFFORT[level]}}),
+    "openai": lambda lv: {"reasoning_effort": "none" if lv == "off" else lv},
+    "openrouter": lambda lv: {"reasoning": {"enabled": False} if lv == "off" else {"effort": lv}},
+    "deepseek": lambda lv: ({"thinking": {"type": "disabled"}} if lv == "off" else
+                            {"thinking": {"type": "enabled"}, "reasoning_effort": lv}),
+}
+FALLBACK = {
+    "openai": {"off": "minimal", "minimal": "minimal", "low": "low", "medium": "medium",
+               "high": "high", "max": "high"},
+    "openrouter": {"off": "off", "minimal": "minimal", "low": "low", "medium": "medium",
+                   "high": "high", "max": "high"},
+    "deepseek": {"off": "off", "minimal": "low", "low": "low", "medium": "high", "high": "high",
+                 "max": "max"},
 }
 
 
@@ -38,11 +45,14 @@ class OpenAIChat:
                  headers: dict[str, str] | None = None, max_tokens_field: str = "max_tokens",
                  reasoning_style: str | None = None, reasoning_field: str | None = None,
                  vision: bool = True, load_image: Callable[[str], str] | None = None,
-                 timeout: float = 600, client: httpx.Client | None = None):
-        """Quirks are arguments (later: rows of the compat table).
-        reasoning_style: how to request a reasoning level ("openai", "openrouter", or None).
-        reasoning_field: send the model's own reasoning back under this field
-            (DeepSeek thinking mode needs "reasoning_content"); None = never send it.
+                 catalog: str | None = None, timeout: float = 600,
+                 client: httpx.Client | None = None):
+        """Provider quirks are arguments, filled from data/providers.json by providers.connect.
+        reasoning_style: how to request a reasoning level ("openai", "openrouter", "deepseek").
+        reasoning_field: send the model's own reasoning back under this field; None = the
+            catalog decides per model (DeepSeek: "reasoning_content"), else never.
+        vision: assumed for models the catalog doesn't know.
+        catalog: the models.dev provider id to look models up in (limits, levels, prices).
         load_image: turns an Image `ref` into base64 data."""
         self.base_url = base_url.rstrip("/")
         self.provider = provider
@@ -51,22 +61,32 @@ class OpenAIChat:
         self.reasoning_field = reasoning_field
         self.vision = vision
         self.load_image = load_image
+        self.catalog = catalog
         h = {"Content-Type": "application/json", **(headers or {})}
         if api_key:
             h["Authorization"] = f"Bearer {api_key}"
         self._headers = h
         self._client = client or httpx.Client(timeout=httpx.Timeout(timeout, connect=30))
 
+    def info(self, model: str) -> catalog.ModelInfo | None:
+        return catalog.lookup(self.catalog, model) if self.catalog else None
+
     def target(self, model: str) -> Target:
-        return Target(self.provider, PROTOCOL, model, vision=self.vision)
+        info = self.info(model)
+        vision = info.vision if info and info.vision is not None else self.vision
+        return Target(self.provider, PROTOCOL, model, vision=vision)
 
     # --- request ---------------------------------------------------------------------------
 
     def body(self, req: Request) -> dict[str, Any]:
+        info = self.info(req.model)
+        field = self.reasoning_field or (info.reasoning_field if info else None)
+        if field == "reasoning_details":  # carried by the replay, see _to_wire
+            field = None
         messages = prepare(req.messages, self.target(req.model))
         body: dict[str, Any] = {
             "model": req.model,
-            "messages": [w for m in messages for w in self._to_wire(m)],
+            "messages": [w for m in messages for w in self._to_wire(m, field)],
             "stream": True,
             "stream_options": {"include_usage": True},
         }
@@ -79,10 +99,14 @@ class OpenAIChat:
         if req.max_tokens:
             body[self.max_tokens_field] = req.max_tokens
         if req.reasoning and self.reasoning_style:
-            body.update(REASONING_STYLES[self.reasoning_style](req.reasoning))
+            level = (catalog.nearest(req.reasoning, info.levels) if info and info.levels
+                     else FALLBACK[self.reasoning_style][req.reasoning])
+            body.update(REASONING_STYLES[self.reasoning_style](level))
         for k in ("temperature", "top_p", "stop"):
             if getattr(req, k) is not None:
                 body[k] = getattr(req, k)
+        if info and not info.temperature:  # the model rejects it (catalog)
+            body.pop("temperature", None)
         if req.response_format:
             body["response_format"] = {"type": "json_schema", "json_schema": {
                 "name": "output", "schema": req.response_format, "strict": True}}
@@ -102,7 +126,10 @@ class OpenAIChat:
                 if r.status_code >= 400:
                     r.read()
                     raise errors.from_http(r.status_code, r.text, r.headers.get("retry-after"))
-                yield from _Parser(self.provider, req.model).parse(_sse(r.iter_lines()))
+                for ev in _Parser(self.provider, req.model).parse(_sse(r.iter_lines())):
+                    if isinstance(ev, Finish) and self.catalog:
+                        catalog.fill_cost(ev.message, self.catalog)
+                    yield ev
         except httpx.TransportError as e:
             raise errors.TarjumanError(errors.NETWORK, str(e) or type(e).__name__) from e
 
@@ -116,7 +143,7 @@ class OpenAIChat:
 
     # --- neutral -> wire ---------------------------------------------------------------------
 
-    def _to_wire(self, m: Message) -> list[dict[str, Any]]:
+    def _to_wire(self, m: Message, reasoning_field: str | None = None) -> list[dict[str, Any]]:
         if m.role == "tool":
             out, images = [], []
             for b in m.content:
@@ -137,10 +164,10 @@ class OpenAIChat:
             details = (m.replay.response or {}).get("reasoning_details") if m.replay else None
             if details:
                 msg["reasoning_details"] = details
-            elif self.reasoning_field:  # after the transform, reasoning left here is the model's own
+            elif reasoning_field:  # after the transform, reasoning left here is the model's own
                 thought = "".join(b.text for b in m.content if isinstance(b, Reasoning))
                 if thought:
-                    msg[self.reasoning_field] = thought
+                    msg[reasoning_field] = thought
             if m.tool_calls:
                 msg["tool_calls"] = [{"id": c.id, "type": "function",
                                       "function": {"name": c.name, "arguments": c.arguments or "{}"}}

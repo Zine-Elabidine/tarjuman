@@ -1,0 +1,56 @@
+{
+  "_about": "The compat table: how to reach each provider and what is quirky about it. Hand-written; each quirk says where it comes from. Per-model facts (limits, vision, reasoning levels, prices, which field reasoning must return in) come from the catalog (models.json), not from here. 'catalog' is the models.dev provider id to look models up in.",
+
+  "openrouter": {
+    "protocol": "openai-chat",
+    "base_url": "https://openrouter.ai/api/v1",
+    "key_env": "OPENROUTER_API_KEY",
+    "key_url": "https://openrouter.ai/keys",
+    "catalog": "openrouter",
+    "headers": {"HTTP-Referer": "https://github.com/Zine-Elabidine/diwan", "X-Title": "Diwan"},
+    "reasoning_style": "openrouter",
+    "_sources": {"reasoning_style": "OpenRouter docs: reasoning {effort | enabled}; pi-ai thinkingFormat 'openrouter'",
+                 "reasoning_details": "handled by the openai-chat translator for every provider (OpenRouter, Bifrost)"}
+  },
+
+  "openai": {
+    "protocol": "openai-chat",
+    "base_url": "https://api.openai.com/v1",
+    "key_env": "OPENAI_API_KEY",
+    "key_url": "https://platform.openai.com/api-keys",
+    "catalog": "openai",
+    "max_tokens_field": "max_completion_tokens",
+    "reasoning_style": "openai",
+    "_sources": {"max_tokens_field": "OpenAI: max_tokens is deprecated and rejected by reasoning models",
+                 "reasoning_style": "OpenAI reasoning_effort; 'off' is 'none' where models.dev lists it"}
+  },
+
+  "anthropic": {
+    "protocol": "anthropic-messages",
+    "base_url": "https://api.anthropic.com",
+    "key_env": "ANTHROPIC_API_KEY",
+    "key_url": "https://console.anthropic.com",
+    "catalog": "anthropic",
+    "_sources": {"thinking": "effort vs budget per model from models.dev reasoning_options"}
+  },
+
+  "deepseek": {
+    "protocol": "openai-chat",
+    "base_url": "https://api.deepseek.com",
+    "key_env": "DEEPSEEK_API_KEY",
+    "key_url": "https://platform.deepseek.com/api_keys",
+    "catalog": "deepseek",
+    "reasoning_style": "deepseek",
+    "_sources": {"reasoning_style": "pi-ai thinkingFormat 'deepseek': thinking {type: enabled|disabled} + reasoning_effort",
+                 "reasoning_field": "models.dev interleaved.field = reasoning_content (its own reasoning must come back in a tool loop)"}
+  },
+
+  "local": {
+    "protocol": "openai-chat",
+    "base_url": "http://localhost:8000/v1",
+    "key_env": "LOCAL_API_KEY",
+    "key_optional": true,
+    "catalog": null,
+    "_sources": {"about": "vLLM, llama.cpp server, LM Studio, Ollama's OpenAI endpoint, or any gateway (Bifrost, LiteLLM proxy)"}
+  }
+}

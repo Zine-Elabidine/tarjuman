@@ -1,0 +1,51 @@
+{
+ "kind": "stream",
+ "protocol": "openai-chat",
+ "options": {
+  "provider": "openrouter"
+ },
+ "model": "anthropic/claude-x",
+ "sse": "data: {\"model\": \"anthropic/claude-x-2026\", \"choices\": [{\"index\": 0, \"delta\": {\"reasoning\": \"I will \", \"reasoning_details\": [{\"type\": \"reasoning.text\", \"text\": \"I will \", \"format\": \"anthropic-claude-v1\", \"index\": 0}]}}]}\n\ndata: {\"choices\": [{\"index\": 0, \"delta\": {\"reasoning\": \"look.\", \"reasoning_details\": [{\"type\": \"reasoning.text\", \"text\": \"look.\", \"index\": 0}]}}]}\n\ndata: {\"choices\": [{\"index\": 0, \"delta\": {\"reasoning_details\": [{\"type\": \"reasoning.text\", \"text\": \"\", \"signature\": \"SIG123\", \"index\": 0}]}}]}\n\ndata: {\"choices\": [{\"index\": 0, \"delta\": {\"content\": \"Done.\"}, \"finish_reason\": \"stop\"}]}\n\ndata: {\"choices\": [], \"usage\": {\"prompt_tokens\": 100, \"completion_tokens\": 20, \"prompt_tokens_details\": {\"cached_tokens\": 60}, \"cost\": 0.001}}\n\ndata: [DONE]\n\n",
+ "expected_message": {
+  "v": 1,
+  "role": "assistant",
+  "content": [
+   {
+    "text": "I will look.",
+    "type": "reasoning"
+   },
+   {
+    "text": "Done.",
+    "type": "text"
+   }
+  ],
+  "provider": "openrouter",
+  "protocol": "openai-chat",
+  "model": "anthropic/claude-x",
+  "response_model": "anthropic/claude-x-2026",
+  "stop": "end",
+  "usage": {
+   "input": 40,
+   "cache_read": 60,
+   "cache_write": 0,
+   "output": 20,
+   "reasoning": 0,
+   "cost": 0.001,
+   "cache_write_long": 0
+  },
+  "replay": {
+   "response": {
+    "reasoning_details": [
+     {
+      "type": "reasoning.text",
+      "text": "I will look.",
+      "format": "anthropic-claude-v1",
+      "index": 0,
+      "signature": "SIG123"
+     }
+    ]
+   },
+   "blocks": null
+  }
+ }
+}

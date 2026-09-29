@@ -17,7 +17,7 @@ from typing import Any
 
 import httpx
 
-from . import errors
+from . import catalog, errors
 from .events import BlockEnd, BlockStart, Event, Finish, ReasoningDelta, TextDelta, ToolCallDelta
 from .transform import Target, prepare
 from .types import (Image, Message, Reasoning, Replay, Request, Text, Tool, ToolCall,
@@ -31,7 +31,8 @@ _STOPS = {"end_turn": "end", "stop_sequence": "end", "tool_use": "tool_use",
           "max_tokens": "max_tokens", "model_context_window_exceeded": "max_tokens",
           "pause_turn": "pause", "refusal": "refusal"}
 
-# Adaptive thinking (current models): the model decides how much, guided by an effort.
+# Adaptive thinking (current models): the model decides how much, guided by an effort. The
+# catalog gives each model's accepted efforts; _EFFORT is for models it doesn't know.
 _EFFORT = {"minimal": "low", "low": "low", "medium": "medium", "high": "high", "max": "max"}
 # Budget thinking (older models): a token budget, which must stay below max_tokens.
 _BUDGET = {"minimal": 1024, "low": 2048, "medium": 8192, "high": 16384, "max": 32000}
@@ -51,15 +52,20 @@ class Anthropic:
                  provider: str = "anthropic", headers: dict[str, str] | None = None,
                  thinking: str = "adaptive", default_max_tokens: int = 8192,
                  vision: bool = True, load_image: Callable[[str], str] | None = None,
-                 timeout: float = 600, client: httpx.Client | None = None):
-        """thinking: "adaptive" (effort levels, current models) or "budget" (older models).
-        default_max_tokens: Anthropic requires max_tokens; used when the request has none."""
+                 catalog: str | None = None, timeout: float = 600,
+                 client: httpx.Client | None = None):
+        """thinking: "adaptive" (effort levels) or "budget", for models the catalog doesn't
+        know; the catalog decides per model otherwise.
+        default_max_tokens: Anthropic requires max_tokens; used when the request has none
+            (capped by the model's own output limit when the catalog knows it).
+        catalog: the models.dev provider id to look models up in."""
         self.base_url = base_url.rstrip("/")
         self.provider = provider
         self.thinking = thinking
         self.default_max_tokens = default_max_tokens
         self.vision = vision
         self.load_image = load_image
+        self.catalog = catalog
         h = {"Content-Type": "application/json", "anthropic-version": API_VERSION,
              **(headers or {})}
         if api_key:
@@ -67,8 +73,13 @@ class Anthropic:
         self._headers = h
         self._client = client or httpx.Client(timeout=httpx.Timeout(timeout, connect=30))
 
+    def info(self, model: str) -> catalog.ModelInfo | None:
+        return catalog.lookup(self.catalog, model) if self.catalog else None
+
     def target(self, model: str) -> Target:
-        return Target(self.provider, PROTOCOL, model, vision=self.vision, id_pattern=ID_PATTERN)
+        info = self.info(model)
+        vision = info.vision if info and info.vision is not None else self.vision
+        return Target(self.provider, PROTOCOL, model, vision=vision, id_pattern=ID_PATTERN)
 
     # --- request ---------------------------------------------------------------------------
 
@@ -79,8 +90,10 @@ class Anthropic:
         system = [m.text for m in messages if m.role == "system"]
         turns = _merge([self._to_wire(m) for m in messages if m.role != "system"])
 
+        info = self.info(req.model)
+        default = min(self.default_max_tokens, info.max_output) if info and info.max_output             else self.default_max_tokens
         body: dict[str, Any] = {"model": req.model, "messages": turns, "stream": True,
-                                "max_tokens": req.max_tokens or self.default_max_tokens}
+                                "max_tokens": req.max_tokens or default}
         if system:
             body["system"] = [{"type": "text", "text": t} for t in system]
         if req.tools:
@@ -90,8 +103,9 @@ class Anthropic:
                     {"type": "tool", "name": req.tool_choice["name"]}
                     if isinstance(req.tool_choice, dict)
                     else {"type": {"required": "any"}.get(req.tool_choice, req.tool_choice)})
-        thinking_on = self._reasoning(body, req)
-        if req.temperature is not None and not thinking_on:  # rejected together with thinking
+        thinking_on = self._reasoning(body, req, info)
+        # rejected together with thinking, and by models that take none at all (catalog)
+        if req.temperature is not None and not thinking_on and not (info and not info.temperature):
             body["temperature"] = req.temperature
         if req.top_p is not None:
             body["top_p"] = req.top_p
@@ -105,21 +119,27 @@ class Anthropic:
         body.update(req.extra or {})
         return body
 
-    def _reasoning(self, body: dict[str, Any], req: Request) -> bool:
+    def _reasoning(self, body: dict[str, Any], req: Request,
+                   info: catalog.ModelInfo | None) -> bool:
         level = req.reasoning
         if level is None:
             return False
         if level == "off":
             body["thinking"] = {"type": "disabled"}
             return False
-        if self.thinking == "adaptive":
+        mode = {"effort": "adaptive", "budget": "budget"}.get(info.thinking if info else None,
+                                                              self.thinking)
+        if mode == "adaptive":
+            effort = (catalog.nearest(level, tuple(lv for lv in info.levels if lv != "off"))
+                      if info and info.levels else _EFFORT[level])
             body["thinking"] = {"type": "adaptive", "display": "summarized"}
-            body["output_config"] = {"effort": _EFFORT[level]}
+            body["output_config"] = {"effort": effort}
         else:
+            low = info.budget[0] if info and info.budget else 1024
             budget = min(_BUDGET[level], body["max_tokens"] - 1024)
-            if budget < 1024:  # the minimum budget; make room for it and some output
-                body["max_tokens"] = 1024 + 2048
-                budget = 1024
+            if budget < low:  # the minimum budget; make room for it and some output
+                body["max_tokens"] = low + 2048
+                budget = low
             body["thinking"] = {"type": "enabled", "budget_tokens": budget, "display": "summarized"}
         return True
 
@@ -136,7 +156,10 @@ class Anthropic:
                 if r.status_code >= 400:
                     r.read()
                     raise _http_error(r.status_code, r.text, r.headers.get("retry-after"))
-                yield from _Parser(self.provider, req.model).parse(_sse(r.iter_lines()))
+                for ev in _Parser(self.provider, req.model).parse(_sse(r.iter_lines())):
+                    if isinstance(ev, Finish) and self.catalog:
+                        catalog.fill_cost(ev.message, self.catalog)
+                    yield ev
         except httpx.TransportError as e:
             raise errors.TarjumanError(errors.NETWORK, str(e) or type(e).__name__) from e
 

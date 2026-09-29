@@ -1,0 +1,115 @@
+{
+ "kind": "wire",
+ "protocol": "anthropic-messages",
+ "options": {
+  "provider": "anthropic"
+ },
+ "request": {
+  "v": 1,
+  "model": "claude-x",
+  "tool_choice": "auto",
+  "cache": "short",
+  "messages": [
+   {
+    "v": 1,
+    "role": "user",
+    "content": [
+     {
+      "text": "fix it",
+      "type": "text"
+     }
+    ]
+   },
+   {
+    "v": 1,
+    "role": "assistant",
+    "content": [
+     {
+      "text": "plan",
+      "type": "reasoning"
+     }
+    ],
+    "provider": "anthropic",
+    "protocol": "anthropic-messages",
+    "model": "claude-x",
+    "stop": "interrupted",
+    "replay": {
+     "response": null,
+     "blocks": [
+      {
+       "signature": "sig-1"
+      }
+     ]
+    },
+    "partial": [
+     {
+      "text": "Let me look at",
+      "type": "text"
+     }
+    ]
+   },
+   {
+    "v": 1,
+    "role": "system",
+    "content": [
+     {
+      "text": "The user interrupted the previous turn on purpose.",
+      "type": "text"
+     }
+    ]
+   },
+   {
+    "v": 1,
+    "role": "user",
+    "content": [
+     {
+      "text": "no, the README",
+      "type": "text"
+     }
+    ]
+   }
+  ]
+ },
+ "expected_body": {
+  "model": "claude-x",
+  "messages": [
+   {
+    "role": "user",
+    "content": [
+     {
+      "type": "text",
+      "text": "fix it"
+     }
+    ]
+   },
+   {
+    "role": "assistant",
+    "content": [
+     {
+      "type": "thinking",
+      "thinking": "plan",
+      "signature": "sig-1"
+     }
+    ]
+   },
+   {
+    "role": "user",
+    "content": [
+     {
+      "type": "text",
+      "text": "<system-reminder>\nThe user interrupted the previous turn on purpose.\n</system-reminder>"
+     },
+     {
+      "type": "text",
+      "text": "no, the README",
+      "cache_control": {
+       "type": "ephemeral"
+      }
+     }
+    ]
+   }
+  ],
+  "stream": true,
+  "max_tokens": 8192
+ }
+}

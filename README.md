@@ -11,7 +11,10 @@ without losing reasoning, tool calls or signatures.
 **Status:** two protocols work: OpenAI Chat Completions (OpenRouter, OpenAI, DeepSeek, vLLM
 and other compatible servers) and Anthropic Messages, with switching between them mid-conversation
 (thinking signatures kept, foreign reasoning sent as text). The format is specified in
-[docs/format.md](docs/format.md). Next: the compat table and a catalog from models.dev. Tarjuman is the provider layer of
+[docs/format.md](docs/format.md). Provider quirks are data (`data/providers.json`), and a model
+catalog generated from [models.dev](https://models.dev) (`scripts/update_catalog.py`) supplies
+limits, vision, each model's reasoning levels and prices. `tests/fixtures/` holds
+language-neutral golden files any port must pass. Tarjuman is the provider layer of
 [Diwan](https://github.com/Zine-Elabidine/diwan), but knows nothing about it and is meant to be
 used on its own.
 

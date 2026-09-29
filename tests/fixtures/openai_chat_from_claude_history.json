@@ -1,0 +1,152 @@
+{
+ "kind": "wire",
+ "protocol": "openai-chat",
+ "options": {
+  "provider": "deepseek",
+  "reasoning_field": "reasoning_content"
+ },
+ "request": {
+  "v": 1,
+  "model": "deepseek-v4",
+  "tool_choice": "required",
+  "max_tokens": 1000,
+  "cache": "short",
+  "messages": [
+   {
+    "v": 1,
+    "role": "user",
+    "content": [
+     {
+      "text": "hi",
+      "type": "text"
+     }
+    ]
+   },
+   {
+    "v": 1,
+    "role": "assistant",
+    "content": [
+     {
+      "text": "I should read it.",
+      "type": "reasoning"
+     },
+     {
+      "text": "Reading.",
+      "type": "text"
+     },
+     {
+      "id": "toolu_01",
+      "name": "read",
+      "arguments": "{\"path\": \"a.py\"}",
+      "type": "tool_call"
+     }
+    ],
+    "provider": "anthropic",
+    "protocol": "anthropic-messages",
+    "model": "claude-x",
+    "stop": "tool_use",
+    "replay": {
+     "response": {
+      "id": "msg_01"
+     },
+     "blocks": [
+      {
+       "signature": "EqQBsig"
+      },
+      null,
+      null
+     ]
+    }
+   },
+   {
+    "v": 1,
+    "role": "tool",
+    "content": [
+     {
+      "type": "tool_result",
+      "call_id": "toolu_01",
+      "content": [
+       {
+        "text": "print(1)",
+        "type": "text"
+       }
+      ],
+      "is_error": false
+     }
+    ]
+   }
+  ],
+  "tools": [
+   {
+    "name": "read",
+    "description": "Read a file",
+    "parameters": {
+     "type": "object",
+     "properties": {
+      "path": {
+       "type": "string"
+      }
+     },
+     "required": [
+      "path"
+     ]
+    },
+    "strict": false
+   }
+  ]
+ },
+ "expected_body": {
+  "model": "deepseek-v4",
+  "messages": [
+   {
+    "role": "user",
+    "content": "hi"
+   },
+   {
+    "role": "assistant",
+    "content": "I should read it.\n\nReading.",
+    "tool_calls": [
+     {
+      "id": "toolu_01",
+      "type": "function",
+      "function": {
+       "name": "read",
+       "arguments": "{\"path\": \"a.py\"}"
+      }
+     }
+    ]
+   },
+   {
+    "role": "tool",
+    "tool_call_id": "toolu_01",
+    "content": "print(1)"
+   }
+  ],
+  "stream": true,
+  "stream_options": {
+   "include_usage": true
+  },
+  "tools": [
+   {
+    "type": "function",
+    "function": {
+     "name": "read",
+     "description": "Read a file",
+     "parameters": {
+      "type": "object",
+      "properties": {
+       "path": {
+        "type": "string"
+       }
+      },
+      "required": [
+       "path"
+      ]
+     }
+    }
+   }
+  ],
+  "tool_choice": "required",
+  "max_tokens": 1000
+ }
+}

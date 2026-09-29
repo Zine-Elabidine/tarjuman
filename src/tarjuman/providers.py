@@ -1,38 +1,63 @@
-"""Ready-made connections. A provider is a protocol plus a URL, a key and a few quirks."""
+"""Ready-made connections. A provider is a protocol plus a URL, a key and a few quirks, all
+read from the compat table (data/providers.json)."""
 
 from __future__ import annotations
 
 import os
+from typing import Any
 
 from . import errors
 from .anthropic import Anthropic
+from .catalog import providers_table
 from .openai_chat import OpenAIChat
 
-
-def anthropic(api_key: str | None = None, **kw) -> Anthropic:
-    key = api_key or os.environ.get("ANTHROPIC_API_KEY")
-    if not key:
-        raise errors.TarjumanError(errors.INVALID_CREDENTIAL,
-                                   "set ANTHROPIC_API_KEY (https://console.anthropic.com)")
-    return Anthropic(key, **kw)
+PROTOCOLS: dict[str, type] = {"openai-chat": OpenAIChat, "anthropic-messages": Anthropic}
+# compat-table keys that are passed to the protocol's constructor as they are
+_QUIRKS = ("headers", "max_tokens_field", "reasoning_style", "reasoning_field", "thinking",
+           "vision", "default_max_tokens")
 
 
-def openrouter(api_key: str | None = None, **kw) -> OpenAIChat:
-    key = api_key or os.environ.get("OPENROUTER_API_KEY")
-    if not key:
-        raise errors.TarjumanError(errors.INVALID_CREDENTIAL,
-                                   "set OPENROUTER_API_KEY (https://openrouter.ai/keys)")
-    return OpenAIChat("https://openrouter.ai/api/v1", key, provider="openrouter",
-                      headers={"HTTP-Referer": "https://github.com/Zine-Elabidine/diwan",
-                               "X-Title": "Diwan"}, reasoning_style="openrouter", **kw)
+def names() -> list[str]:
+    return list(providers_table())
 
 
-def openai(api_key: str | None = None, **kw) -> OpenAIChat:
-    return OpenAIChat("https://api.openai.com/v1", api_key or os.environ.get("OPENAI_API_KEY"),
-                      provider="openai", max_tokens_field="max_completion_tokens",
-                      reasoning_style="openai", **kw)
+def connect(name: str, *, api_key: str | None = None, base_url: str | None = None,
+            **kw: Any) -> OpenAIChat | Anthropic:
+    """A client for a provider in the compat table. `base_url` points it elsewhere (a gateway
+    speaking the same protocol); keyword arguments override the table's quirks."""
+    row = providers_table().get(name)
+    if row is None:
+        raise errors.TarjumanError(errors.INVALID_REQUEST,
+                                   f"unknown provider {name!r}; known: {', '.join(names())}")
+    key = api_key or os.environ.get(row["key_env"])
+    if not key and not row.get("key_optional") and base_url is None:
+        where = f" ({row['key_url']})" if row.get("key_url") else ""
+        raise errors.TarjumanError(errors.INVALID_CREDENTIAL, f"set {row['key_env']}{where}")
+    quirks = {k: row[k] for k in _QUIRKS if k in row}
+    cls = PROTOCOLS[row["protocol"]]
+    url = base_url or row["base_url"]
+    args = {"provider": name, "catalog": row.get("catalog"), **quirks, **kw}
+    if cls is Anthropic:
+        return Anthropic(key, base_url=url, **args)
+    return OpenAIChat(url, key, **args)
 
 
-def local(base_url: str = "http://localhost:8000/v1", **kw) -> OpenAIChat:
-    """vLLM, llama.cpp server, LM Studio, Ollama's OpenAI endpoint..."""
-    return OpenAIChat(base_url, os.environ.get("LOCAL_API_KEY"), provider="local", **kw)
+def openrouter(api_key: str | None = None, **kw: Any) -> OpenAIChat:
+    return connect("openrouter", api_key=api_key, **kw)
+
+
+def openai(api_key: str | None = None, **kw: Any) -> OpenAIChat:
+    return connect("openai", api_key=api_key, **kw)
+
+
+def anthropic(api_key: str | None = None, **kw: Any) -> Anthropic:
+    return connect("anthropic", api_key=api_key, **kw)
+
+
+def deepseek(api_key: str | None = None, **kw: Any) -> OpenAIChat:
+    return connect("deepseek", api_key=api_key, **kw)
+
+
+def local(base_url: str = "http://localhost:8000/v1", **kw: Any) -> OpenAIChat:
+    """vLLM, llama.cpp server, LM Studio, Ollama's OpenAI endpoint, a gateway..."""
+    return connect("local", base_url=base_url, **kw)

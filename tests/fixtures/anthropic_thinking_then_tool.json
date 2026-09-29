@@ -1,0 +1,55 @@
+{
+ "kind": "stream",
+ "protocol": "anthropic-messages",
+ "options": {
+  "provider": "anthropic"
+ },
+ "model": "claude-x",
+ "sse": "event: message_start\ndata: {\"type\": \"message_start\", \"message\": {\"id\": \"msg_01\", \"model\": \"claude-x\", \"usage\": {\"input_tokens\": 50, \"cache_read_input_tokens\": 400, \"cache_creation_input_tokens\": 100}}}\n\nevent: content_block_start\ndata: {\"type\": \"content_block_start\", \"index\": 0, \"content_block\": {\"type\": \"thinking\", \"thinking\": \"\", \"signature\": \"\"}}\n\nevent: content_block_delta\ndata: {\"type\": \"content_block_delta\", \"index\": 0, \"delta\": {\"type\": \"thinking_delta\", \"thinking\": \"I should read it.\"}}\n\nevent: content_block_delta\ndata: {\"type\": \"content_block_delta\", \"index\": 0, \"delta\": {\"type\": \"signature_delta\", \"signature\": \"EqQBsig\"}}\n\nevent: content_block_stop\ndata: {\"type\": \"content_block_stop\", \"index\": 0}\n\nevent: ping\ndata: {\"type\": \"ping\"}\n\nevent: content_block_start\ndata: {\"type\": \"content_block_start\", \"index\": 1, \"content_block\": {\"type\": \"text\", \"text\": \"\"}}\n\nevent: content_block_delta\ndata: {\"type\": \"content_block_delta\", \"index\": 1, \"delta\": {\"type\": \"text_delta\", \"text\": \"Reading.\"}}\n\nevent: content_block_stop\ndata: {\"type\": \"content_block_stop\", \"index\": 1}\n\nevent: content_block_start\ndata: {\"type\": \"content_block_start\", \"index\": 2, \"content_block\": {\"type\": \"tool_use\", \"id\": \"toolu_01\", \"name\": \"read\", \"input\": {}}}\n\nevent: content_block_delta\ndata: {\"type\": \"content_block_delta\", \"index\": 2, \"delta\": {\"type\": \"input_json_delta\", \"partial_json\": \"{\\\"path\\\": \\\"a.py\\\"}\"}}\n\nevent: content_block_stop\ndata: {\"type\": \"content_block_stop\", \"index\": 2}\n\nevent: message_delta\ndata: {\"type\": \"message_delta\", \"delta\": {\"stop_reason\": \"tool_use\"}, \"usage\": {\"output_tokens\": 30}}\n\nevent: message_stop\ndata: {\"type\": \"message_stop\"}\n\n",
+ "expected_message": {
+  "v": 1,
+  "role": "assistant",
+  "content": [
+   {
+    "text": "I should read it.",
+    "type": "reasoning"
+   },
+   {
+    "text": "Reading.",
+    "type": "text"
+   },
+   {
+    "id": "toolu_01",
+    "name": "read",
+    "arguments": "{\"path\": \"a.py\"}",
+    "type": "tool_call"
+   }
+  ],
+  "provider": "anthropic",
+  "protocol": "anthropic-messages",
+  "model": "claude-x",
+  "stop": "tool_use",
+  "usage": {
+   "input": 50,
+   "cache_read": 400,
+   "cache_write": 100,
+   "output": 30,
+   "reasoning": 0,
+   "cost": null,
+   "cache_write_long": 0
+  },
+  "replay": {
+   "response": {
+    "id": "msg_01",
+    "stop_reason": "tool_use"
+   },
+   "blocks": [
+    {
+     "signature": "EqQBsig"
+    },
+    null,
+    null
+   ]
+  }
+ }
+}

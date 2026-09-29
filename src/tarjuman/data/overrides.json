@@ -1,0 +1,4 @@
+{
+  "_about": "Corrections to models.json (generated from models.dev). Same shape: providers -> model id -> fields to replace. Say why in '_why' next to each entry.",
+  "providers": {}
+}
