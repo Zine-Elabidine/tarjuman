@@ -3,9 +3,9 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Literal
+from typing import Any, Literal
 
-from .types import Message
+from .types import Block, Message
 
 
 @dataclass
@@ -36,7 +36,11 @@ class ToolCallDelta:
 
 @dataclass
 class BlockEnd:
+    """The block is complete. Carries it assembled, with its replay entry (e.g. a signature),
+    so a caller interrupted later can still keep every finished block exactly."""
     index: int
+    block: Block | None = None
+    replay: Any = None
 
 
 @dataclass

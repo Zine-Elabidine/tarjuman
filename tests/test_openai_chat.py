@@ -3,9 +3,9 @@ import json
 import httpx
 import pytest
 
-from tarjuman import Finish, Message, OpenAIChat, TarjumanError, Text, TextDelta, Tool, ToolCall, ToolResult
+from tarjuman import (BlockEnd, Finish, Image, Message, OpenAIChat, Reasoning, Request, TarjumanError,
+                      Text, TextDelta, Tool, ToolCall, ToolResult)
 from tarjuman import errors
-from tarjuman.transform import close_tool_calls
 
 
 def sse(*chunks):
@@ -63,7 +63,8 @@ def test_text_reasoning_and_tool_call_stream():
     assert msg.content[0].text == "Let me look."
     assert msg.tool_calls[0].args() == {"path": "a.py"}
     assert msg.stop == "tool_use"
-    assert msg.model == "vendor/m-1" and msg.provider == "test"
+    assert msg.model == "vendor/m" and msg.response_model == "vendor/m-1"   # asked vs served
+    assert msg.provider == "test" and msg.protocol == "openai-chat"
     u = msg.usage
     assert (u.input, u.cache_read, u.output, u.reasoning, u.cost) == (40, 60, 20, 5, 0.0012)
 
@@ -129,6 +130,63 @@ def test_message_roundtrip():
     assert Message.from_dict(json.loads(json.dumps(m.to_dict()))) == m
 
 
-def test_close_tool_calls_leaves_answered_history_alone():
-    h = [Message("assistant", [ToolCall("c1", "x", "{}")]), Message("tool", [ToolResult("c1", "r")])]
-    assert close_tool_calls(h) == h
+def wire_of(history, request=None, **quirks):
+    seen = {}
+
+    def handler(req):
+        seen["body"] = json.loads(req.content)
+        return httpx.Response(200, content=sse(delta(content="ok")))
+
+    p = OpenAIChat("https://x.test/v1", "k", provider="test", **quirks,
+                   client=httpx.Client(transport=httpx.MockTransport(handler)))
+    p.complete(request or Request("m", history))
+    return seen["body"]
+
+
+def test_images_go_as_parts_and_tool_images_follow_as_user():
+    h = [Message("user", [Text("see"), Image("image/png", data="AAA")]),
+         Message("assistant", [ToolCall("c1", "shot", "{}")]),
+         Message("tool", [ToolResult("c1", [Text("taken"), Image("image/png", ref="r1")])])]
+    body = wire_of(h, load_image=lambda ref: "BBB")
+    assert body["messages"][0]["content"][1] == {
+        "type": "image_url", "image_url": {"url": "data:image/png;base64,AAA"}}
+    assert body["messages"][2] == {"role": "tool", "tool_call_id": "c1", "content": "taken"}
+    assert body["messages"][3]["role"] == "user"
+    assert body["messages"][3]["content"][1]["image_url"]["url"] == "data:image/png;base64,BBB"
+
+
+def test_own_reasoning_is_sent_back_only_with_the_quirk():
+    mine = Message("assistant", [Reasoning("plan"), ToolCall("c1", "a", "{}")], "test", "m",
+                   None, "tool_use", "openai-chat")
+    h = [Message.user("go"), mine, Message("tool", [ToolResult("c1", "ok")])]
+    assert "reasoning_content" not in wire_of(h)["messages"][1]
+    assert wire_of(h, reasoning_field="reasoning_content")["messages"][1]["reasoning_content"] == "plan"
+    other = Message("assistant", [Reasoning("plan"), ToolCall("c1", "a", "{}")], "x", "y",
+                    None, "tool_use", "openai-chat")
+    body = wire_of([h[0], other, h[2]], reasoning_field="reasoning_content")
+    assert "reasoning_content" not in body["messages"][1]       # another model's: sent as text
+    assert body["messages"][1]["content"] == "plan"
+
+
+def test_request_options_map_to_the_wire():
+    r = Request("m", [Message.user("hi")], [Tool("read", "R", {"type": "object"}, strict=True)],
+                tool_choice={"name": "read"}, max_tokens=50, reasoning="max", temperature=0.2,
+                stop=["END"], response_format={"type": "object"}, extra={"top_k": 3})
+    body = wire_of(None, r, reasoning_style="openrouter")
+    assert body["tool_choice"] == {"type": "function", "function": {"name": "read"}}
+    assert body["tools"][0]["function"]["strict"] is True
+    assert body["reasoning"] == {"effort": "high"}                # max -> nearest the dialect has
+    assert (body["max_tokens"], body["temperature"], body["stop"], body["top_k"]) == (50, 0.2, ["END"], 3)
+    assert body["response_format"]["json_schema"]["schema"] == {"type": "object"}
+    off = wire_of(None, Request("m", [Message.user("hi")], reasoning="off"), reasoning_style="openrouter")
+    assert off["reasoning"] == {"enabled": False}
+
+
+def test_refusal_and_block_end_carries_the_block():
+    p = provider(lambda req: httpx.Response(200, content=sse(
+        delta(refusal="I can't help with that."),
+        {"choices": [{"delta": {}, "finish_reason": "stop"}]})))
+    events = list(p.stream("m", [Message.user("bad")]))
+    ends = [e for e in events if isinstance(e, BlockEnd)]
+    assert ends[0].block == Text("I can't help with that.")
+    assert events[-1].message.stop == "refusal"

@@ -15,12 +15,13 @@ def openrouter(api_key: str | None = None, **kw) -> OpenAIChat:
                                    "set OPENROUTER_API_KEY (https://openrouter.ai/keys)")
     return OpenAIChat("https://openrouter.ai/api/v1", key, provider="openrouter",
                       headers={"HTTP-Referer": "https://github.com/Zine-Elabidine/diwan",
-                               "X-Title": "Diwan"}, **kw)
+                               "X-Title": "Diwan"}, reasoning_style="openrouter", **kw)
 
 
 def openai(api_key: str | None = None, **kw) -> OpenAIChat:
     return OpenAIChat("https://api.openai.com/v1", api_key or os.environ.get("OPENAI_API_KEY"),
-                      provider="openai", max_tokens_field="max_completion_tokens", **kw)
+                      provider="openai", max_tokens_field="max_completion_tokens",
+                      reasoning_style="openai", **kw)
 
 
 def local(base_url: str = "http://localhost:8000/v1", **kw) -> OpenAIChat:

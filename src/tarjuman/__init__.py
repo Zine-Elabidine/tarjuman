@@ -4,10 +4,13 @@ from .errors import TarjumanError
 from .events import (BlockEnd, BlockStart, Event, Finish, ReasoningDelta, TextDelta,
                      ToolCallDelta)
 from .openai_chat import OpenAIChat
-from .types import Block, Message, Reasoning, Text, Tool, ToolCall, ToolResult, Usage
+from .transform import Target, prepare
+from .types import (Block, Image, Message, Reasoning, Replay, Request, Text, Tool, ToolCall,
+                    ToolResult, Unknown, Usage)
 
-__version__ = "0.0.1"
+__version__ = "0.1.0"
 
-__all__ = ["Block", "BlockEnd", "BlockStart", "Event", "Finish", "Message", "OpenAIChat",
-           "Reasoning", "ReasoningDelta", "TarjumanError", "Text", "TextDelta", "Tool",
-           "ToolCall", "ToolCallDelta", "ToolResult", "Usage"]
+__all__ = ["Block", "BlockEnd", "BlockStart", "Event", "Finish", "Image", "Message",
+           "OpenAIChat", "Reasoning", "ReasoningDelta", "Replay", "Request", "Target",
+           "TarjumanError", "Text", "TextDelta", "Tool", "ToolCall", "ToolCallDelta",
+           "ToolResult", "Unknown", "Usage", "prepare"]
