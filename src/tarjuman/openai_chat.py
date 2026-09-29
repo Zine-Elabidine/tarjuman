@@ -12,8 +12,8 @@ import httpx
 from . import errors
 from .events import BlockEnd, BlockStart, Event, Finish, ReasoningDelta, TextDelta, ToolCallDelta
 from .transform import Target, prepare
-from .types import (Image, Message, Reasoning, Request, Text, Tool, ToolCall, ToolResult,
-                    Usage)
+from .types import (Image, Message, Reasoning, Replay, Request, Text, Tool, ToolCall,
+                    ToolResult, Usage)
 
 PROTOCOL = "openai-chat"
 
@@ -132,7 +132,12 @@ class OpenAIChat:
             # separate blocks (another model's thinking turned into text, then the answer)
             text = "\n\n".join(b.text for b in m.content if isinstance(b, Text))
             msg: dict[str, Any] = {"role": "assistant", "content": text or None}
-            if self.reasoning_field:  # after the transform, reasoning left here is the model's own
+            # the transform keeps a replay only for the same model: send its reasoning back
+            # exactly as it came (OpenRouter / Bifrost carry signatures this way)
+            details = (m.replay.response or {}).get("reasoning_details") if m.replay else None
+            if details:
+                msg["reasoning_details"] = details
+            elif self.reasoning_field:  # after the transform, reasoning left here is the model's own
                 thought = "".join(b.text for b in m.content if isinstance(b, Reasoning))
                 if thought:
                     msg[self.reasoning_field] = thought
@@ -193,6 +198,7 @@ class _Parser:
         self.finish: str | None = None
         self.refused = False
         self.usage = Usage()
+        self.details: list[dict[str, Any]] = []  # reasoning_details, merged as they stream
 
     def _end(self, i: int) -> BlockEnd:
         return BlockEnd(i, self.blocks[i])
@@ -231,8 +237,9 @@ class _Parser:
         stop = "refusal" if self.refused else _STOPS.get(self.finish or "stop", "end")
         if stop == "end" and any(isinstance(b, ToolCall) for b in self.blocks):
             stop = "tool_use"
+        replay = Replay({"reasoning_details": self.details}) if self.details else None
         yield Finish(Message("assistant", list(self.blocks), self.provider, self.model,
-                             self.usage, stop, PROTOCOL, self.response_model))
+                             self.usage, stop, PROTOCOL, self.response_model, replay))
 
     def _text(self, text: str) -> Iterator[Event]:
         if self.open is None or not isinstance(self.blocks[self.open], Text):
@@ -241,7 +248,13 @@ class _Parser:
         yield TextDelta(self.open, text)
 
     def _delta(self, d: dict[str, Any]) -> Iterator[Event]:
+        details = [x for x in d.get("reasoning_details") or [] if _valid_detail(x)]
+        for x in details:
+            _append_detail(self.details, x)
         reasoning = d.get("reasoning") or d.get("reasoning_content")
+        if not reasoning:  # some servers send only the structured form
+            reasoning = "".join(x.get("text") or x.get("summary") or "" for x in details
+                                if x["type"] != "reasoning.encrypted")
         if reasoning:
             if self.open is None or not isinstance(self.blocks[self.open], Reasoning):
                 yield from self._start(Reasoning(""))
@@ -265,6 +278,29 @@ class _Parser:
             if fn.get("arguments"):
                 call.arguments += fn["arguments"]
                 yield ToolCallDelta(self.calls[wire], fn["arguments"])
+
+
+_DETAIL_FIELD = {"reasoning.text": "text", "reasoning.summary": "summary",
+                 "reasoning.encrypted": "data"}
+
+
+def _valid_detail(x: Any) -> bool:
+    field = _DETAIL_FIELD.get(x.get("type")) if isinstance(x, dict) else None
+    return field is not None and isinstance(x.get(field), str)
+
+
+def _append_detail(details: list[dict[str, Any]], x: dict[str, Any]) -> None:
+    """OpenRouter streams reasoning_details in pieces: consecutive text or summary pieces are
+    one entry; encrypted entries stay whole and opaque."""
+    last = details[-1] if details else None
+    field = _DETAIL_FIELD[x["type"]]
+    if last and last["type"] == x["type"] and field != "data":
+        last[field] += x[field]
+        for k, v in x.items():  # a signature, id or format often arrives on a later piece
+            if k != field and v is not None and last.get(k) is None:
+                last[k] = v
+        return
+    details.append(dict(x))
 
 
 def _usage(u: dict[str, Any]) -> Usage:

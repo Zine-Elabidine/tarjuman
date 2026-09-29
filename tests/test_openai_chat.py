@@ -190,3 +190,42 @@ def test_refusal_and_block_end_carries_the_block():
     ends = [e for e in events if isinstance(e, BlockEnd)]
     assert ends[0].block == Text("I can't help with that.")
     assert events[-1].message.stop == "refusal"
+
+
+def test_reasoning_details_are_merged_kept_and_sent_back_to_the_same_model():
+    # OpenRouter / Bifrost stream Claude's thinking with its signature in reasoning_details
+    rd = lambda **d: delta(reasoning_details=[d])
+    p = provider(lambda req: httpx.Response(200, content=sse(
+        {**delta(reasoning="I will "), "choices": [{"index": 0, "delta": {
+            "reasoning": "I will ", "reasoning_details": [
+                {"type": "reasoning.text", "text": "I will ", "format": "anthropic-claude-v1", "index": 0}]},
+            "finish_reason": None}]},
+        rd(type="reasoning.text", text="look.", index=0),
+        rd(type="reasoning.text", text="", signature="SIG123", index=0),
+        rd(type="reasoning.encrypted", data="ENC==", index=1),
+        delta(content="Done."),
+        {"choices": [{"delta": {}, "finish_reason": "stop"}]})))
+    msg = p.complete("anthropic/claude-x", [Message.user("hi")])
+    assert msg.content[0] == Reasoning("I will look.")
+    assert msg.replay.response["reasoning_details"] == [
+        {"type": "reasoning.text", "text": "I will look.", "format": "anthropic-claude-v1",
+         "index": 0, "signature": "SIG123"},
+        {"type": "reasoning.encrypted", "data": "ENC==", "index": 1}]
+
+    same = wire_of(None, Request("anthropic/claude-x", [Message.user("hi"), msg, Message.user("more")]))
+    assert same["messages"][1]["reasoning_details"] == msg.replay.response["reasoning_details"]
+
+    other = wire_of([Message.user("hi"), msg, Message.user("more")])  # model "m": another model
+    assert "reasoning_details" not in other["messages"][1]
+    assert other["messages"][1]["content"] == "I will look.\n\nDone."
+
+
+def test_reasoning_details_alone_still_give_reasoning_text():
+    p = provider(lambda req: httpx.Response(200, content=sse(
+        delta(reasoning_details=[{"type": "reasoning.summary", "summary": "Plan: "}]),
+        delta(reasoning_details=[{"type": "reasoning.summary", "summary": "read."}]),
+        delta(content="ok"), {"choices": [{"delta": {}, "finish_reason": "stop"}]})))
+    msg = p.complete("m", [Message.user("hi")])
+    assert msg.content[0] == Reasoning("Plan: read.")
+    assert msg.replay.response["reasoning_details"] == [{"type": "reasoning.summary",
+                                                         "summary": "Plan: read."}]
