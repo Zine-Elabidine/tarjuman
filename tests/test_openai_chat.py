@@ -229,3 +229,29 @@ def test_reasoning_details_alone_still_give_reasoning_text():
     assert msg.content[0] == Reasoning("Plan: read.")
     assert msg.replay.response["reasoning_details"] == [{"type": "reasoning.summary",
                                                          "summary": "Plan: read."}]
+
+
+def test_cache_breakpoints_on_system_and_newest_message_for_listed_models():
+    h = [Message.system("sys"), Message.user("go"),
+         Message("assistant", [ToolCall("c1", "read", "{}")]),
+         Message("tool", [ToolResult("c1", "file body")])]
+    body = wire_of(h, Request("anthropic/claude-x", h), cache_control=["anthropic/"])
+    msgs = body["messages"]
+    assert msgs[0]["content"] == [{"type": "text", "text": "sys",
+                                   "cache_control": {"type": "ephemeral"}}]
+    assert msgs[-1]["role"] == "tool"
+    assert msgs[-1]["content"][-1]["cache_control"] == {"type": "ephemeral"}
+    assert msgs[1]["content"] == "go"                               # only two breakpoints
+
+    long = wire_of(h, Request("anthropic/claude-x", h, cache="long"), cache_control=True)
+    assert long["messages"][0]["content"][0]["cache_control"]["ttl"] == "1h"
+    for req in (Request("deepseek/v4", h), Request("anthropic/claude-x", h, cache="none")):
+        assert wire_of(h, req, cache_control=["anthropic/"])["messages"][0]["content"] == "sys"
+
+
+def test_openrouter_marks_claude_but_not_deepseek():
+    from tarjuman import providers
+    p = providers.openrouter(api_key="k")
+    h = [Message.system("s"), Message.user("u")]
+    assert "cache_control" in json.dumps(p.body(Request("anthropic/claude-sonnet-4.5", h)))
+    assert "cache_control" not in json.dumps(p.body(Request("deepseek/deepseek-v4-flash", h)))

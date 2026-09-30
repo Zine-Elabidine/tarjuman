@@ -14,7 +14,7 @@ from .openai_chat import OpenAIChat
 PROTOCOLS: dict[str, type] = {"openai-chat": OpenAIChat, "anthropic-messages": Anthropic}
 # compat-table keys that are passed to the protocol's constructor as they are
 _QUIRKS = ("headers", "max_tokens_field", "reasoning_style", "reasoning_field", "thinking",
-           "vision", "default_max_tokens")
+           "vision", "default_max_tokens", "cache_control")
 
 
 def names() -> list[str]:

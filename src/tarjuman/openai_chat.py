@@ -45,15 +45,17 @@ class OpenAIChat:
                  headers: dict[str, str] | None = None, max_tokens_field: str = "max_tokens",
                  reasoning_style: str | None = None, reasoning_field: str | None = None,
                  vision: bool = True, load_image: Callable[[str], str] | None = None,
-                 catalog: str | None = None, timeout: float = 600,
-                 client: httpx.Client | None = None):
+                 catalog: str | None = None, cache_control: bool | list[str] = False,
+                 timeout: float = 600, client: httpx.Client | None = None):
         """Provider quirks are arguments, filled from data/providers.json by providers.connect.
         reasoning_style: how to request a reasoning level ("openai", "openrouter", "deepseek").
         reasoning_field: send the model's own reasoning back under this field; None = the
             catalog decides per model (DeepSeek: "reasoning_content"), else never.
         vision: assumed for models the catalog doesn't know.
         catalog: the models.dev provider id to look models up in (limits, levels, prices).
-        load_image: turns an Image `ref` into base64 data."""
+        load_image: turns an Image `ref` into base64 data.
+        cache_control: models that cache only at explicit breakpoints (Claude, Qwen
+            behind OpenRouter): True for every model, or a list of model-id prefixes."""
         self.base_url = base_url.rstrip("/")
         self.provider = provider
         self.max_tokens_field = max_tokens_field
@@ -62,6 +64,7 @@ class OpenAIChat:
         self.vision = vision
         self.load_image = load_image
         self.catalog = catalog
+        self.cache_control = cache_control
         h = {"Content-Type": "application/json", **(headers or {})}
         if api_key:
             h["Authorization"] = f"Bearer {api_key}"
@@ -110,8 +113,16 @@ class OpenAIChat:
         if req.response_format:
             body["response_format"] = {"type": "json_schema", "json_schema": {
                 "name": "output", "schema": req.response_format, "strict": True}}
+        if req.cache != "none" and self._explicit_cache(req.model):
+            _mark_cache(body["messages"], {"type": "ephemeral", "ttl": "1h"}
+                        if req.cache == "long" else {"type": "ephemeral"})
         body.update(req.extra or {})
         return body
+
+    def _explicit_cache(self, model: str) -> bool:
+        if isinstance(self.cache_control, bool):
+            return self.cache_control
+        return model.startswith(tuple(self.cache_control))
 
     def stream(self, request: Request | str, messages: list[Message] | None = None, *,
                tools: list[Tool] | None = None, max_tokens: int | None = None,
@@ -191,6 +202,23 @@ class OpenAIChat:
                 data = self.load_image(img.ref)
             url = f"data:{img.mime};base64,{data}"
         return {"type": "image_url", "image_url": {"url": url}}
+
+
+def _mark_cache(messages: list[dict[str, Any]], cache: dict[str, str]) -> None:
+    """Breakpoints on the system prompt and the newest message: everything before each one is
+    cached, and the next request finds it by walking back. Two of Anthropic's four
+    (a tool message works too: measured). Marking needs the content as a list of parts."""
+    if not messages:
+        return
+    ends = {0, len(messages) - 1} if messages[0]["role"] == "system" else {len(messages) - 1}
+    for i in ends:
+        m = messages[i]
+        content = m.get("content")
+        if isinstance(content, str) and content:
+            m["content"] = content = [{"type": "text", "text": content}]
+        texts = [part for part in content or [] if part.get("type") == "text"]
+        if texts:
+            texts[-1]["cache_control"] = cache
 
 
 def _tool(t: Tool) -> dict[str, Any]:

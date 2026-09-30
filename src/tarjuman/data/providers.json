@@ -9,7 +9,9 @@
     "catalog": "openrouter",
     "headers": {"HTTP-Referer": "https://github.com/Zine-Elabidine/diwan", "X-Title": "Diwan"},
     "reasoning_style": "openrouter",
-    "_sources": {"reasoning_style": "OpenRouter docs: reasoning {effort | enabled}; pi-ai thinkingFormat 'openrouter'",
+    "cache_control": ["anthropic/", "qwen/"],
+    "_sources": {"cache_control": "OpenRouter prompt-caching docs: Anthropic and Qwen cache only at cache_control breakpoints; OpenAI, DeepSeek, Grok, Moonshot, Groq, Z.AI cache automatically. Measured 2026-09-30 (10k-token prompt, tool loop): claude-haiku-4.5 step $0.0012 vs ~$0.0105, qwen3-coder-flash $0.00022 vs $0.00044. Gemini left out: explicit breakpoints write a new cache every request (gemini-3.1-flash-lite $0.0038 vs $0.0027 without); its implicit caching is automatic",
+                 "reasoning_style": "OpenRouter docs: reasoning {effort | enabled}; pi-ai thinkingFormat 'openrouter'",
                  "reasoning_details": "handled by the openai-chat translator for every provider (OpenRouter, Bifrost)"}
   },
 
