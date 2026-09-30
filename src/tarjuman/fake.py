@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections.abc import Iterator
 from typing import Any
 
+from .cancel import Cancel, cancelled_error
 from .errors import TarjumanError
 from .events import BlockEnd, BlockStart, Event, Finish, ReasoningDelta, TextDelta, ToolCallDelta
 from .transform import Target, prepare
@@ -22,7 +23,13 @@ class Fake:
         self.requests: list[list[Message]] = []   # what each call was sent, after the transform
 
     def stream(self, request: Request | str, messages: list[Message] | None = None,
-               **kw: Any) -> Iterator[Event]:
+               cancel: Cancel | None = None, **kw: Any) -> Iterator[Event]:
+        for ev in self._events(request, messages):
+            if cancel is not None and cancel.cancelled:
+                raise cancelled_error()
+            yield ev
+
+    def _events(self, request: Request | str, messages: list[Message] | None) -> Iterator[Event]:
         req = request if isinstance(request, Request) else Request(request, messages or [])
         self.requests.append(prepare(req.messages, Target(self.provider, PROTOCOL, req.model)))
         if not self.script:

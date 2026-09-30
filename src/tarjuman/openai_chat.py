@@ -10,6 +10,7 @@ from typing import Any
 import httpx
 
 from . import catalog, errors
+from .cancel import Cancel, cancellable
 from .events import BlockEnd, BlockStart, Event, Finish, ReasoningDelta, TextDelta, ToolCallDelta
 from .transform import Target, prepare
 from .types import (Image, Message, Reasoning, Replay, Request, Text, Tool, ToolCall,
@@ -126,14 +127,25 @@ class OpenAIChat:
 
     def stream(self, request: Request | str, messages: list[Message] | None = None, *,
                tools: list[Tool] | None = None, max_tokens: int | None = None,
-               **extra: Any) -> Iterator[Event]:
-        """`stream(Request(...))`, or the shortcut `stream(model, messages, tools=...)`."""
+               cancel: Cancel | None = None, **extra: Any) -> Iterator[Event]:
+        """`stream(Request(...))`, or the shortcut `stream(model, messages, tools=...)`.
+        With `cancel`, firing it stops the stream at once (see cancel.py)."""
         req = request if isinstance(request, Request) else Request(
             request, messages or [], tools, max_tokens=max_tokens, extra=extra or None)
         body = self.body(req)
+        if cancel is None:
+            yield from self._events(req, body, None)
+        else:
+            yield from cancellable(lambda token: self._events(req, body, token), cancel)
+
+    def _events(self, req: Request, body: dict[str, Any], token: Cancel | None) -> Iterator[Event]:
+        if token and token.cancelled:
+            return
         try:
             with self._client.stream("POST", f"{self.base_url}/chat/completions",
                                      headers=self._headers, json=body) as r:
+                if token:  # closing the response is what stops the provider generating
+                    token.on_cancel(r.close)
                 if r.status_code >= 400:
                     r.read()
                     raise errors.from_http(r.status_code, r.text, r.headers.get("retry-after"))
