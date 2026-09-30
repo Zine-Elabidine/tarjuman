@@ -66,6 +66,11 @@ def _table() -> dict[str, dict[str, dict[str, Any]]]:
     return models
 
 
+def models(provider: str) -> list[str]:
+    """Every model id the catalog knows for a provider."""
+    return list(_table().get(provider, {}))
+
+
 def lookup(provider: str, model: str) -> ModelInfo | None:
     d = _table().get(provider, {}).get(model)
     if d is None:
