@@ -21,8 +21,8 @@ from . import catalog, errors, limits
 from .cancel import Cancel, cancellable
 from .events import BlockEnd, BlockStart, Event, Finish, ReasoningDelta, TextDelta, ToolCallDelta
 from .transform import Target, prepare
-from .types import (Image, Message, Reasoning, Replay, Request, Text, Tool, ToolCall,
-                    ToolResult, Unknown, Usage)
+from .types import (Image, Message, Reasoning, Replay, Request, Text, Tool, ToolCall, ToolResult,
+                    Unknown, Usage)
 
 PROTOCOL = "anthropic-messages"
 API_VERSION = "2023-06-01"
@@ -103,7 +103,8 @@ class Anthropic:
         turns = _merge([self._to_wire(m) for m in messages if m.role != "system"])
 
         info = self.info(req.model)
-        default = min(self.default_max_tokens, info.max_output) if info and info.max_output             else self.default_max_tokens
+        default = (min(self.default_max_tokens, info.max_output) if info and info.max_output
+                   else self.default_max_tokens)
         body: dict[str, Any] = {"model": req.model, "messages": turns, "stream": True,
                                 "max_tokens": req.max_tokens or default}
         if system:
@@ -204,7 +205,8 @@ class Anthropic:
         if m.role == "assistant":
             entries = m.replay.blocks if m.replay and m.replay.blocks else [None] * len(m.content)
             return {"role": "assistant",
-                    "content": [p for b, e in zip(m.content, entries) for p in _assistant_part(b, e)]}
+                    "content": [p for b, e in zip(m.content, entries, strict=True)
+                                for p in _assistant_part(b, e)]}
         return {"role": "user", "content": [self._part(b) for b in m.content]}
 
     def _part(self, b: Text | Image) -> dict[str, Any]:

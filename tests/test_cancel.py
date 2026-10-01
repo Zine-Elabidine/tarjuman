@@ -4,8 +4,7 @@ import time
 import httpx
 import pytest
 
-from tarjuman import Cancel, Message, OpenAIChat, TarjumanError, TextDelta
-from tarjuman import errors
+from tarjuman import Cancel, Message, OpenAIChat, TarjumanError, TextDelta, errors
 from tarjuman.cancel import cancellable
 
 

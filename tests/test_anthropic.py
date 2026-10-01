@@ -3,10 +3,8 @@ import json
 import httpx
 import pytest
 
-from tarjuman import (Anthropic, BlockEnd, BlockStart, Finish, Message, OpenAIChat, Reasoning,
-                      Replay, Request, TarjumanError, Text, TextDelta, Tool, ToolCall, ToolResult,
-                      Unknown)
-from tarjuman import errors
+from tarjuman import (Anthropic, BlockEnd, BlockStart, Message, OpenAIChat, Reasoning, Request,
+                      TarjumanError, Text, TextDelta, Tool, ToolCall, ToolResult, Unknown, errors)
 from tarjuman.transform import REMINDER
 
 
@@ -199,8 +197,8 @@ def test_errors():
               ).complete("claude-x", [Message.user("hi")])
     assert e.value.code == errors.OVERLOADED and e.value.retryable
     with pytest.raises(TarjumanError) as e:
-        fails(400, {"type": "error", "error": {"type": "invalid_request_error",
-                                               "message": "prompt is too long: 210000 tokens > 200000 maximum"}}
+        too_long = "prompt is too long: 210000 tokens > 200000 maximum"
+        fails(400, {"type": "error", "error": {"type": "invalid_request_error", "message": too_long}}
               ).complete("claude-x", [Message.user("hi")])
     assert e.value.code == errors.CONTEXT_WINDOW_EXCEEDED
     with pytest.raises(TarjumanError) as e:   # mid-stream error event
@@ -234,7 +232,7 @@ def test_switch_claude_to_openai_chat_and_back_loses_nothing():
 
     # back to Claude: its own thinking returns signed; DeepSeek's reasoning comes as text
     seen = {}
-    client(THINK_THEN_TOOL, seen).complete("claude-x", history + [turn2, Message.user("thanks")])
+    client(THINK_THEN_TOOL, seen).complete("claude-x", [*history, turn2, Message.user("thanks")])
     msgs = seen["body"]["messages"]
     assert msgs[1]["content"][0]["signature"] == "EqQBsig"
     assert msgs[3]["content"][:2] == [{"type": "text", "text": "fine"},

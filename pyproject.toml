@@ -20,5 +20,26 @@ build-backend = "uv_build"
 
 [dependency-groups]
 dev = [
+    "pyright>=1.1.414",
     "pytest>=9.1.1",
+    "ruff>=0.16.9",
 ]
+
+[tool.ruff]
+line-length = 110
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "B", "UP", "SIM", "RUF", "PL"]
+ignore = [
+    "PLR2004",            # magic numbers: limits are named where they matter
+    "PLR0911", "PLR0912", "PLR0913", "PLR0915", "PLR0917",  # complexity is tracked in reviews
+    "PLC0415",            # lazy imports are deliberate (the TUI loads only when used)
+    "RUF001",             # typographic characters in UI strings are intended
+    "SIM105",             # try/except/pass reads fine
+]
+
+[tool.pyright]
+include = ["src"]
+pythonVersion = "3.12"
+typeCheckingMode = "standard"

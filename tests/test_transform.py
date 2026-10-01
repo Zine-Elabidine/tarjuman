@@ -1,7 +1,6 @@
 """One test per rule of docs/format.md §5."""
 
-from tarjuman import (Image, Message, Reasoning, Replay, Target, Text, ToolCall, ToolResult,
-                      Unknown, prepare)
+from tarjuman import Image, Message, Reasoning, Replay, Target, Text, ToolCall, ToolResult, Unknown, prepare
 from tarjuman.transform import NO_RESULT, NO_VISION, REMINDER
 
 CLAUDE = Target("anthropic", "anthropic-messages", "claude-x", id_pattern=r"[a-zA-Z0-9_-]{1,64}")
@@ -109,7 +108,7 @@ def test_prefix_is_unchanged_when_a_reminder_is_added():
     # the cache argument: appending a reminder never changes what came before it
     h = [Message.system("p"), Message.user("hi"), by(DEEPSEEK, Text("yo"), stop="end")]
     before = prepare(h, DEEPSEEK)
-    after = prepare(h + [Message.system("note"), Message.user("next")], DEEPSEEK)
+    after = prepare([*h, Message.system("note"), Message.user("next")], DEEPSEEK)
     assert after[:len(before)] == before
 
 

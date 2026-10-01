@@ -9,8 +9,7 @@ import hashlib
 import re
 from dataclasses import dataclass, replace
 
-from .types import (ALLOWED, Block, Image, Message, Reasoning, Replay, Text, ToolCall,
-                    ToolResult)
+from .types import ALLOWED, Block, Image, Message, Reasoning, Replay, Text, ToolCall, ToolResult
 
 NO_RESULT = "No result: the call was interrupted before it ran."
 NO_VISION = "(image omitted: this model does not accept images)"
@@ -110,9 +109,10 @@ def _assistant(m: Message, t: Target, ids: dict[str, str]) -> Message | None:
     entries = replay.blocks if replay else None
     blocks: list[Block] = []
     kept: list = []
-    for i, b in enumerate(m.content):
-        if not isinstance(b, ALLOWED["assistant"]):
+    for i, original in enumerate(m.content):
+        if not isinstance(original, ALLOWED["assistant"]):
             continue
+        b: Block = original
         if isinstance(b, Reasoning) and not same:
             if b.redacted or not b.text.strip():
                 continue

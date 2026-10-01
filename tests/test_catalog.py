@@ -3,8 +3,8 @@ import json
 import httpx
 import pytest
 
-from tarjuman import Anthropic, Message, OpenAIChat, Reasoning, Request, TarjumanError, ToolCall, ToolResult, Usage
-from tarjuman import catalog, providers
+from tarjuman import (Anthropic, Message, OpenAIChat, Reasoning, Request, TarjumanError, ToolCall,
+                      ToolResult, Usage, catalog, providers)
 
 TABLE = {
     "anthropic": {
@@ -38,7 +38,8 @@ def capture(cls, **kw):
             ev = [{"type": "message_start", "message": {"id": "m", "model": "x", "usage": {
                 "input_tokens": 1000, "cache_read_input_tokens": 2000,
                 "cache_creation_input_tokens": 500, "cache_creation": {"ephemeral_1h_input_tokens": 100}}}},
-                {"type": "message_delta", "delta": {"stop_reason": "end_turn"}, "usage": {"output_tokens": 300}},
+                {"type": "message_delta", "delta": {"stop_reason": "end_turn"},
+                 "usage": {"output_tokens": 300}},
                 {"type": "message_stop"}]
             return httpx.Response(200, content="".join(f"data: {json.dumps(e)}\n\n" for e in ev).encode())
         chunk = {"choices": [{"delta": {"content": "ok"}, "finish_reason": "stop"}],

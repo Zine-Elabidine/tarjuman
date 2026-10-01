@@ -13,8 +13,7 @@ from . import catalog, errors, limits
 from .cancel import Cancel, cancellable
 from .events import BlockEnd, BlockStart, Event, Finish, ReasoningDelta, TextDelta, ToolCallDelta
 from .transform import Target, prepare
-from .types import (Image, Message, Reasoning, Replay, Request, Text, Tool, ToolCall,
-                    ToolResult, Usage)
+from .types import Image, Message, Reasoning, Replay, Request, Text, Tool, ToolCall, Usage
 
 PROTOCOL = "openai-chat"
 

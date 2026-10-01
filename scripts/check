@@ -1,0 +1,7 @@
+#!/usr/bin/env bash
+# Run before every commit: lint, types, tests. pyright reports only, until it reaches zero.
+set -e
+cd "$(dirname "$0")/.."
+uv run ruff check src tests
+uv run pyright 2>&1 | tail -1 || true
+uv run pytest -q

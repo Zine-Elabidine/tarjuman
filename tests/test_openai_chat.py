@@ -3,9 +3,8 @@ import json
 import httpx
 import pytest
 
-from tarjuman import (BlockEnd, Finish, Image, Message, OpenAIChat, Reasoning, Request, TarjumanError,
-                      Text, TextDelta, Tool, ToolCall, ToolResult)
-from tarjuman import errors
+from tarjuman import (BlockEnd, Finish, Image, Message, OpenAIChat, Reasoning, Request,
+                      TarjumanError, Text, TextDelta, Tool, ToolCall, ToolResult, errors)
 
 
 def sse(*chunks):
@@ -194,7 +193,8 @@ def test_refusal_and_block_end_carries_the_block():
 
 def test_reasoning_details_are_merged_kept_and_sent_back_to_the_same_model():
     # OpenRouter / Bifrost stream Claude's thinking with its signature in reasoning_details
-    rd = lambda **d: delta(reasoning_details=[d])
+    def rd(**d):
+        return delta(reasoning_details=[d])
     p = provider(lambda req: httpx.Response(200, content=sse(
         {**delta(reasoning="I will "), "choices": [{"index": 0, "delta": {
             "reasoning": "I will ", "reasoning_details": [
