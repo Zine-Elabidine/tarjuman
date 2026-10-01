@@ -5,7 +5,7 @@ from tarjuman.fake import Fake
 
 
 def test_every_provider_offers_the_same_interface():
-    # checked by pyright too: each assignment must satisfy the Provider protocol
+    # statically: fake.py asserts Fake fits Provider; Diwan's Router stores connect() results as one
     impls: list[Provider] = [OpenAIChat("https://x.test/v1", "k"), Anthropic("k"),
                              Fake([Message("assistant", [Text("hi")])], window=1000)]
     for p in impls:

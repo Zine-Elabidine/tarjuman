@@ -4,12 +4,13 @@ whole Provider interface, so code written against a real provider runs on it unc
 from __future__ import annotations
 
 from collections.abc import Iterator
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from . import catalog
 from .cancel import Cancel, cancelled_error
 from .errors import SERVER_ERROR, TarjumanError
 from .events import BlockEnd, BlockStart, Event, Finish, ReasoningDelta, TextDelta, ToolCallDelta
+from .provider import Provider
 from .transform import Target, prepare
 from .types import Message, Reasoning, Request, Text, ToolCall, Usage
 
@@ -72,3 +73,7 @@ class Fake:
         yield Finish(Message("assistant", item.content, self.provider, req.model,
                              item.usage or Usage(1, 0, 0, 1), stop, PROTOCOL,
                              replay=item.replay))
+
+
+if TYPE_CHECKING:   # pyright checks src/ only: this is where Fake's fit with Provider is enforced
+    _check: Provider = Fake([])
