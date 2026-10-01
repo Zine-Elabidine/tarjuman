@@ -1,6 +1,7 @@
 """Tarjuman: one neutral language for every LLM provider."""
 
 from .anthropic import Anthropic
+from . import limits
 from .cancel import Cancel
 from .errors import TarjumanError
 from .events import (BlockEnd, BlockStart, Event, Finish, ReasoningDelta, TextDelta,

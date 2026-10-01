@@ -9,7 +9,7 @@ from typing import Any
 
 import httpx
 
-from . import catalog, errors
+from . import catalog, errors, limits
 from .cancel import Cancel, cancellable
 from .events import BlockEnd, BlockStart, Event, Finish, ReasoningDelta, TextDelta, ToolCallDelta
 from .transform import Target, prepare
@@ -71,9 +71,20 @@ class OpenAIChat:
             h["Authorization"] = f"Bearer {api_key}"
         self._headers = h
         self._client = client or httpx.Client(timeout=httpx.Timeout(timeout, connect=30))
+        self._windows: dict[str, int] | None = None  # from the server's /models, when asked
 
     def info(self, model: str) -> catalog.ModelInfo | None:
         return catalog.lookup(self.catalog, model) if self.catalog else None
+
+    def context_window(self, model: str) -> int | None:
+        """The model's context window in tokens: the catalog's, else what the server's /models
+        listing says (asked once), else None."""
+        info = self.info(model)
+        if info and info.context:
+            return info.context
+        if self._windows is None:
+            self._windows = limits.served_windows(self._client, self.base_url, self._headers)
+        return self._windows.get(model)
 
     def target(self, model: str) -> Target:
         info = self.info(model)

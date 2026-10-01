@@ -18,9 +18,13 @@ class Fake:
     provider = "fake"
     protocol = PROTOCOL
 
-    def __init__(self, script: list[Message | TarjumanError]):
+    def __init__(self, script: list[Message | TarjumanError], window: int | None = None):
         self.script = list(script)
+        self.window = window
         self.requests: list[list[Message]] = []   # what each call was sent, after the transform
+
+    def context_window(self, model: str) -> int | None:
+        return self.window
 
     def stream(self, request: Request | str, messages: list[Message] | None = None,
                cancel: Cancel | None = None, **kw: Any) -> Iterator[Event]:
