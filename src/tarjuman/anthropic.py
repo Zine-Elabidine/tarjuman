@@ -21,14 +21,14 @@ from . import catalog, errors, limits
 from .cancel import Cancel, cancellable
 from .events import BlockEnd, BlockStart, Event, Finish, ReasoningDelta, TextDelta, ToolCallDelta
 from .transform import Target, prepare
-from .types import (Image, Message, Reasoning, Replay, Request, Text, Tool, ToolCall, ToolResult,
-                    Unknown, Usage)
+from .types import (Image, Message, Reasoning, Replay, Request, Stop, Text, Tool, ToolCall,
+                    ToolResult, Unknown, Usage)
 
 PROTOCOL = "anthropic-messages"
 API_VERSION = "2023-06-01"
 ID_PATTERN = r"[a-zA-Z0-9_-]{1,64}"
 
-_STOPS = {"end_turn": "end", "stop_sequence": "end", "tool_use": "tool_use",
+_STOPS: dict[str, Stop] = {"end_turn": "end", "stop_sequence": "end", "tool_use": "tool_use",
           "max_tokens": "max_tokens", "model_context_window_exceeded": "max_tokens",
           "pause_turn": "pause", "refusal": "refusal"}
 
@@ -140,7 +140,7 @@ class Anthropic:
         if level == "off":
             body["thinking"] = {"type": "disabled"}
             return False
-        mode = {"effort": "adaptive", "budget": "budget"}.get(info.thinking if info else None,
+        mode = {"effort": "adaptive", "budget": "budget"}.get((info.thinking if info else None) or "",
                                                               self.thinking)
         if mode == "adaptive":
             effort = (catalog.nearest(level, tuple(lv for lv in info.levels if lv != "off"))
@@ -207,7 +207,8 @@ class Anthropic:
             return {"role": "assistant",
                     "content": [p for b, e in zip(m.content, entries, strict=True)
                                 for p in _assistant_part(b, e)]}
-        return {"role": "user", "content": [self._part(b) for b in m.content]}
+        return {"role": "user", "content": [self._part(b) for b in m.content
+                                            if isinstance(b, Text | Image)]}
 
     def _part(self, b: Text | Image) -> dict[str, Any]:
         if isinstance(b, Text):
@@ -218,7 +219,7 @@ class Anthropic:
         if data is None:
             if self.load_image is None:
                 raise errors.TarjumanError(errors.INVALID_REQUEST, f"image {b.ref} has no loader")
-            data = self.load_image(b.ref)
+            data = self.load_image(b.ref or "")
         return {"type": "image", "source": {"type": "base64", "media_type": b.mime, "data": data}}
 
 
@@ -339,7 +340,7 @@ class _Parser:
                 self.stopped = True
             elif kind == "error":
                 err = ev.get("error") or {}
-                raise errors.TarjumanError(_ERROR_TYPES.get(err.get("type"), errors.SERVER_ERROR),
+                raise errors.TarjumanError(_ERROR_TYPES.get(str(err.get("type")), errors.SERVER_ERROR),
                                            err.get("message") or "stream error")
             # "ping" and anything newer: ignored
         if not self.stopped:

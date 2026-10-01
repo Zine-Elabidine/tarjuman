@@ -42,22 +42,27 @@ def connect(name: str, *, api_key: str | None = None, base_url: str | None = Non
     return OpenAIChat(url, key, **args)
 
 
+def _as[P: (OpenAIChat, Anthropic)](kind: type[P], p: OpenAIChat | Anthropic) -> P:
+    assert isinstance(p, kind)
+    return p
+
+
 def openrouter(api_key: str | None = None, **kw: Any) -> OpenAIChat:
-    return connect("openrouter", api_key=api_key, **kw)
+    return _as(OpenAIChat, connect("openrouter", api_key=api_key, **kw))
 
 
 def openai(api_key: str | None = None, **kw: Any) -> OpenAIChat:
-    return connect("openai", api_key=api_key, **kw)
+    return _as(OpenAIChat, connect("openai", api_key=api_key, **kw))
 
 
 def anthropic(api_key: str | None = None, **kw: Any) -> Anthropic:
-    return connect("anthropic", api_key=api_key, **kw)
+    return _as(Anthropic, connect("anthropic", api_key=api_key, **kw))
 
 
 def deepseek(api_key: str | None = None, **kw: Any) -> OpenAIChat:
-    return connect("deepseek", api_key=api_key, **kw)
+    return _as(OpenAIChat, connect("deepseek", api_key=api_key, **kw))
 
 
 def local(base_url: str = "http://localhost:8000/v1", **kw: Any) -> OpenAIChat:
     """vLLM, llama.cpp server, LM Studio, Ollama's OpenAI endpoint, a gateway..."""
-    return connect("local", base_url=base_url, **kw)
+    return _as(OpenAIChat, connect("local", base_url=base_url, **kw))

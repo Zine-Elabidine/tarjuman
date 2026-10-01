@@ -63,17 +63,19 @@ class ToolCall:
         return value
 
 
-@dataclass
+@dataclass(init=False)
 class ToolResult:
     call_id: str
-    content: list[Text | Image]  # a plain string is accepted and wrapped in Text
+    content: list[Text | Image]
     is_error: bool = False
     name: str | None = None      # the tool's name (Gemini needs it; filled in by the transform)
     type: Literal["tool_result"] = "tool_result"
 
-    def __post_init__(self) -> None:
-        if isinstance(self.content, str):
-            self.content = [Text(self.content)]
+    def __init__(self, call_id: str, content: str | list[Text | Image], is_error: bool = False,
+                 name: str | None = None, type: Literal["tool_result"] = "tool_result"):
+        """`content` may be a plain string: it becomes one Text block."""
+        self.call_id, self.is_error, self.name, self.type = call_id, is_error, name, type
+        self.content = [Text(content)] if isinstance(content, str) else list(content)
 
     @property
     def text(self) -> str:
@@ -115,7 +117,7 @@ def block_to_dict(b: Block) -> dict[str, Any]:
 
 
 def block_from_dict(d: dict[str, Any]) -> Block:
-    kind = d.get("type")
+    kind = str(d.get("type") or "")
     data = {k: v for k, v in d.items() if k != "type"}
     cls = _BLOCKS.get(kind)
     # an unknown type, or a known one with fields from a newer version: keep it untouched

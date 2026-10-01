@@ -13,11 +13,12 @@ from . import catalog, errors, limits
 from .cancel import Cancel, cancellable
 from .events import BlockEnd, BlockStart, Event, Finish, ReasoningDelta, TextDelta, ToolCallDelta
 from .transform import Target, prepare
-from .types import Image, Message, Reasoning, Replay, Request, Text, Tool, ToolCall, Usage
+from .types import (Image, Message, Reasoning, Replay, Request, Stop, Text, Tool, ToolCall,
+                    ToolResult, Usage)
 
 PROTOCOL = "openai-chat"
 
-_STOPS = {"stop": "end", "tool_calls": "tool_use", "function_call": "tool_use",
+_STOPS: dict[str, Stop] = {"stop": "end", "tool_calls": "tool_use", "function_call": "tool_use",
           "length": "max_tokens", "content_filter": "refusal"}
 
 # How each dialect turns reasoning on, given a level the model accepts. The level comes from
@@ -180,6 +181,8 @@ class OpenAIChat:
         if m.role == "tool":
             out, images = [], []
             for b in m.content:
+                if not isinstance(b, ToolResult):
+                    continue
                 out.append({"role": "tool", "tool_call_id": b.call_id,
                             "content": b.text or ("(image)" if b.content else "")})
                 images += [c for c in b.content if isinstance(c, Image)]
@@ -209,7 +212,7 @@ class OpenAIChat:
         if any(isinstance(b, Image) for b in m.content):
             return [{"role": m.role, "content": [
                 {"type": "text", "text": b.text} if isinstance(b, Text) else self._image(b)
-                for b in m.content]}]
+                for b in m.content if isinstance(b, Text | Image)]}]
         return [{"role": m.role, "content": m.text}]
 
     def _image(self, img: Image) -> dict[str, Any]:
@@ -221,7 +224,7 @@ class OpenAIChat:
                 if self.load_image is None:
                     raise errors.TarjumanError(errors.INVALID_REQUEST,
                                                f"image {img.ref} has no loader")
-                data = self.load_image(img.ref)
+                data = self.load_image(img.ref or "")
             url = f"data:{img.mime};base64,{data}"
         return {"type": "image_url", "image_url": {"url": url}}
 
@@ -238,7 +241,7 @@ def _mark_cache(messages: list[dict[str, Any]], cache: dict[str, str]) -> None:
         content = m.get("content")
         if isinstance(content, str) and content:
             m["content"] = content = [{"type": "text", "text": content}]
-        texts = [part for part in content or [] if part.get("type") == "text"]
+        texts: list[dict[str, Any]] = [part for part in content or [] if part.get("type") == "text"]
         if texts:
             texts[-1]["cache_control"] = cache
 
@@ -311,7 +314,7 @@ class _Parser:
             yield self._end(self.open)
         for i in self.calls.values():
             yield self._end(i)
-        stop = "refusal" if self.refused else _STOPS.get(self.finish or "stop", "end")
+        stop: Stop = "refusal" if self.refused else _STOPS.get(self.finish or "stop", "end")
         if stop == "end" and any(isinstance(b, ToolCall) for b in self.blocks):
             stop = "tool_use"
         replay = Replay({"reasoning_details": self.details}) if self.details else None
@@ -321,8 +324,16 @@ class _Parser:
     def _text(self, text: str) -> Iterator[Event]:
         if self.open is None or not isinstance(self.blocks[self.open], Text):
             yield from self._start(Text(""))
-        self.blocks[self.open].text += text
-        yield TextDelta(self.open, text)
+        i, block = self._open_block(Text)
+        block.text += text
+        yield TextDelta(i, text)
+
+    def _open_block[B: (Text, Reasoning)](self, kind: type[B]) -> tuple[int, B]:
+        """The block _start just opened (or kept open), as the kind the caller expects."""
+        assert self.open is not None
+        block = self.blocks[self.open]
+        assert isinstance(block, kind)
+        return self.open, block
 
     def _delta(self, d: dict[str, Any]) -> Iterator[Event]:
         details = [x for x in d.get("reasoning_details") or [] if _valid_detail(x)]
@@ -335,8 +346,9 @@ class _Parser:
         if reasoning:
             if self.open is None or not isinstance(self.blocks[self.open], Reasoning):
                 yield from self._start(Reasoning(""))
-            self.blocks[self.open].text += reasoning
-            yield ReasoningDelta(self.open, reasoning)
+            i, block = self._open_block(Reasoning)
+            block.text += reasoning
+            yield ReasoningDelta(i, reasoning)
         if d.get("content"):
             yield from self._text(d["content"])
         if d.get("refusal"):
@@ -350,6 +362,7 @@ class _Parser:
                 yield from self._start(call)
                 self.calls[wire] = len(self.blocks) - 1
             call = self.blocks[self.calls[wire]]
+            assert isinstance(call, ToolCall)
             if fn.get("name") and not call.name:
                 call.name = fn["name"]
             if fn.get("arguments"):
@@ -362,7 +375,7 @@ _DETAIL_FIELD = {"reasoning.text": "text", "reasoning.summary": "summary",
 
 
 def _valid_detail(x: Any) -> bool:
-    field = _DETAIL_FIELD.get(x.get("type")) if isinstance(x, dict) else None
+    field = _DETAIL_FIELD.get(str(x.get("type"))) if isinstance(x, dict) else None
     return field is not None and isinstance(x.get(field), str)
 
 
