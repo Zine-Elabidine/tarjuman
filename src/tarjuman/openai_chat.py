@@ -9,10 +9,10 @@ from typing import Any
 
 import httpx
 
-from . import catalog, errors, limits
-from .cancel import Cancel, cancellable
+from . import catalog, errors
 from .events import BlockEnd, BlockStart, Event, Finish, ReasoningDelta, TextDelta, ToolCallDelta
-from .transform import Target, prepare
+from .provider import HTTPProvider
+from .transform import prepare
 from .types import (Image, Message, Reasoning, Replay, Request, Stop, Text, Tool, ToolCall,
                     ToolResult, Usage)
 
@@ -39,8 +39,9 @@ FALLBACK = {
 }
 
 
-class OpenAIChat:
+class OpenAIChat(HTTPProvider):
     protocol = PROTOCOL
+    path = "/chat/completions"
 
     def __init__(self, base_url: str, api_key: str | None, *, provider: str = "openai",
                  headers: dict[str, str] | None = None, max_tokens_field: str = "max_tokens",
@@ -57,39 +58,15 @@ class OpenAIChat:
         load_image: turns an Image `ref` into base64 data.
         cache_control: models that cache only at explicit breakpoints (Claude, Qwen
             behind OpenRouter): True for every model, or a list of model-id prefixes."""
-        self.base_url = base_url.rstrip("/")
-        self.provider = provider
+        h = dict(headers or {})
+        if api_key:
+            h["Authorization"] = f"Bearer {api_key}"
+        super().__init__(base_url, provider, h, vision=vision, load_image=load_image,
+                         catalog=catalog, timeout=timeout, client=client)
         self.max_tokens_field = max_tokens_field
         self.reasoning_style = reasoning_style
         self.reasoning_field = reasoning_field
-        self.vision = vision
-        self.load_image = load_image
-        self.catalog = catalog
         self.cache_control = cache_control
-        h = {"Content-Type": "application/json", **(headers or {})}
-        if api_key:
-            h["Authorization"] = f"Bearer {api_key}"
-        self._headers = h
-        self._client = client or httpx.Client(timeout=httpx.Timeout(timeout, connect=30))
-        self._windows: dict[str, int] | None = None  # from the server's /models, when asked
-
-    def info(self, model: str) -> catalog.ModelInfo | None:
-        return catalog.lookup(self.catalog, model) if self.catalog else None
-
-    def context_window(self, model: str) -> int | None:
-        """The model's context window in tokens: the catalog's, else what the server's /models
-        listing says (asked once), else None."""
-        info = self.info(model)
-        if info and info.context:
-            return info.context
-        if self._windows is None:
-            self._windows = limits.served_windows(self._client, self.base_url, self._headers)
-        return self._windows.get(model)
-
-    def target(self, model: str) -> Target:
-        info = self.info(model)
-        vision = info.vision if info and info.vision is not None else self.vision
-        return Target(self.provider, PROTOCOL, model, vision=vision)
 
     # --- request ---------------------------------------------------------------------------
 
@@ -136,44 +113,8 @@ class OpenAIChat:
             return self.cache_control
         return model.startswith(tuple(self.cache_control))
 
-    def stream(self, request: Request | str, messages: list[Message] | None = None, *,
-               tools: list[Tool] | None = None, max_tokens: int | None = None,
-               cancel: Cancel | None = None, **extra: Any) -> Iterator[Event]:
-        """`stream(Request(...))`, or the shortcut `stream(model, messages, tools=...)`.
-        With `cancel`, firing it stops the stream at once (see cancel.py)."""
-        req = request if isinstance(request, Request) else Request(
-            request, messages or [], tools, max_tokens=max_tokens, extra=extra or None)
-        body = self.body(req)
-        if cancel is None:
-            yield from self._events(req, body, None)
-        else:
-            yield from cancellable(lambda token: self._events(req, body, token), cancel)
-
-    def _events(self, req: Request, body: dict[str, Any], token: Cancel | None) -> Iterator[Event]:
-        if token and token.cancelled:
-            return
-        try:
-            with self._client.stream("POST", f"{self.base_url}/chat/completions",
-                                     headers=self._headers, json=body) as r:
-                if token:  # closing the response is what stops the provider generating
-                    token.on_cancel(r.close)
-                if r.status_code >= 400:
-                    r.read()
-                    raise errors.from_http(r.status_code, r.text, r.headers.get("retry-after"))
-                for ev in _Parser(self.provider, req.model).parse(_sse(r.iter_lines())):
-                    if isinstance(ev, Finish) and self.catalog:
-                        catalog.fill_cost(ev.message, self.catalog)
-                    yield ev
-        except httpx.TransportError as e:
-            raise errors.TarjumanError(errors.NETWORK, str(e) or type(e).__name__) from e
-
-    def complete(self, request: Request | str, messages: list[Message] | None = None,
-                 **kw: Any) -> Message:
-        """Non-streaming convenience: consume the stream, return the final message."""
-        for ev in self.stream(request, messages, **kw):
-            if isinstance(ev, Finish):
-                return ev.message
-        raise errors.TarjumanError(errors.SERVER_ERROR, "stream ended without a finish")
+    def _parse(self, model: str, lines: Iterator[str]) -> Iterator[Event]:
+        return _Parser(self.provider, model).parse(_sse(lines))
 
     # --- neutral -> wire ---------------------------------------------------------------------
 

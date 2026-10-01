@@ -1,6 +1,6 @@
 import httpx
 
-from tarjuman import Image, Message, OpenAIChat, Tool, ToolCall, ToolResult, limits
+from tarjuman import Image, Message, OpenAIChat, Tool, ToolCall, ToolResult, tokens
 
 
 def served(rows, status=200):
@@ -45,15 +45,15 @@ def test_estimate_counts_text_calls_results_tools_and_images():
             Message("assistant", [ToolCall("c1", "read", '{"path": "' + "b" * 90 + '"}')]),
             Message("tool", [ToolResult("c1", [Image("image/png", data="x")])])]
     tool = Tool("read", "Read", {"type": "object"})
-    n_chars = limits.chars(msgs, [tool])
+    n_chars = tokens.chars(msgs, [tool])
     call = len("read") + len('{"path": "') + 90 + len('"}')
     tool_def = len("read") + len("Read") + len('{"type": "object"}')
     assert n_chars == 400 + call + tool_def                    # the image is counted apart
-    est = limits.estimate(msgs, [tool], chars_per_token=4)
-    assert est == round(n_chars / 4) + limits.IMAGE_TOKENS + 3 * limits.MESSAGE_OVERHEAD
+    est = tokens.estimate(msgs, [tool], chars_per_token=4)
+    assert est == round(n_chars / 4) + tokens.IMAGE_TOKENS + 3 * tokens.MESSAGE_OVERHEAD
 
 
 def test_ratio_is_calibrated_from_a_real_report():
     msgs = [Message.user("word " * 2000)]                     # 10,000 characters
-    assert limits.ratio(msgs, None, 2504) == 10_000 / 2500     # 4 overhead tokens removed
-    assert limits.ratio(msgs, None, 100) is None               # too small to trust
+    assert tokens.ratio(msgs, None, 2504) == 10_000 / 2500     # 4 overhead tokens removed
+    assert tokens.ratio(msgs, None, 100) is None               # too small to trust

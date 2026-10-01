@@ -17,10 +17,10 @@ from typing import Any
 
 import httpx
 
-from . import catalog, errors, limits
-from .cancel import Cancel, cancellable
+from . import catalog, errors
 from .events import BlockEnd, BlockStart, Event, Finish, ReasoningDelta, TextDelta, ToolCallDelta
-from .transform import Target, prepare
+from .provider import HTTPProvider
+from .transform import prepare
 from .types import (Image, Message, Reasoning, Replay, Request, Stop, Text, Tool, ToolCall,
                     ToolResult, Unknown, Usage)
 
@@ -46,8 +46,11 @@ _ERROR_TYPES = {"overloaded_error": errors.OVERLOADED, "rate_limit_error": error
                 "request_too_large": errors.INVALID_REQUEST, "not_found_error": errors.INVALID_REQUEST}
 
 
-class Anthropic:
+class Anthropic(HTTPProvider):
     protocol = PROTOCOL
+    path = "/v1/messages"
+    models_path = "/v1"
+    id_pattern = ID_PATTERN
 
     def __init__(self, api_key: str | None, *, base_url: str = "https://api.anthropic.com",
                  provider: str = "anthropic", headers: dict[str, str] | None = None,
@@ -60,38 +63,13 @@ class Anthropic:
         default_max_tokens: Anthropic requires max_tokens; used when the request has none
             (capped by the model's own output limit when the catalog knows it).
         catalog: the models.dev provider id to look models up in."""
-        self.base_url = base_url.rstrip("/")
-        self.provider = provider
-        self.thinking = thinking
-        self.default_max_tokens = default_max_tokens
-        self.vision = vision
-        self.load_image = load_image
-        self.catalog = catalog
-        h = {"Content-Type": "application/json", "anthropic-version": API_VERSION,
-             **(headers or {})}
+        h = {"anthropic-version": API_VERSION, **(headers or {})}
         if api_key:
             h["x-api-key"] = api_key
-        self._headers = h
-        self._client = client or httpx.Client(timeout=httpx.Timeout(timeout, connect=30))
-        self._windows: dict[str, int] | None = None  # from the server's /models, when asked
-
-    def info(self, model: str) -> catalog.ModelInfo | None:
-        return catalog.lookup(self.catalog, model) if self.catalog else None
-
-    def context_window(self, model: str) -> int | None:
-        """The model's context window in tokens: the catalog's, else what the server's /models
-        listing says (asked once), else None."""
-        info = self.info(model)
-        if info and info.context:
-            return info.context
-        if self._windows is None:
-            self._windows = limits.served_windows(self._client, f"{self.base_url}/v1", self._headers)
-        return self._windows.get(model)
-
-    def target(self, model: str) -> Target:
-        info = self.info(model)
-        vision = info.vision if info and info.vision is not None else self.vision
-        return Target(self.provider, PROTOCOL, model, vision=vision, id_pattern=ID_PATTERN)
+        super().__init__(base_url, provider, h, vision=vision, load_image=load_image,
+                         catalog=catalog, timeout=timeout, client=client)
+        self.thinking = thinking
+        self.default_max_tokens = default_max_tokens
 
     # --- request ---------------------------------------------------------------------------
 
@@ -156,43 +134,11 @@ class Anthropic:
             body["thinking"] = {"type": "enabled", "budget_tokens": budget, "display": "summarized"}
         return True
 
-    def stream(self, request: Request | str, messages: list[Message] | None = None, *,
-               tools: list[Tool] | None = None, max_tokens: int | None = None,
-               cancel: Cancel | None = None, **extra: Any) -> Iterator[Event]:
-        """`stream(Request(...))`, or the shortcut `stream(model, messages, tools=...)`.
-        With `cancel`, firing it stops the stream at once (see cancel.py)."""
-        req = request if isinstance(request, Request) else Request(
-            request, messages or [], tools, max_tokens=max_tokens, extra=extra or None)
-        body = self.body(req)
-        if cancel is None:
-            yield from self._events(req, body, None)
-        else:
-            yield from cancellable(lambda token: self._events(req, body, token), cancel)
+    def _parse(self, model: str, lines: Iterator[str]) -> Iterator[Event]:
+        return _Parser(self.provider, model).parse(_sse(lines))
 
-    def _events(self, req: Request, body: dict[str, Any], token: Cancel | None) -> Iterator[Event]:
-        if token and token.cancelled:
-            return
-        try:
-            with self._client.stream("POST", f"{self.base_url}/v1/messages",
-                                     headers=self._headers, json=body) as r:
-                if token:  # closing the response is what stops the provider generating
-                    token.on_cancel(r.close)
-                if r.status_code >= 400:
-                    r.read()
-                    raise _http_error(r.status_code, r.text, r.headers.get("retry-after"))
-                for ev in _Parser(self.provider, req.model).parse(_sse(r.iter_lines())):
-                    if isinstance(ev, Finish) and self.catalog:
-                        catalog.fill_cost(ev.message, self.catalog)
-                    yield ev
-        except httpx.TransportError as e:
-            raise errors.TarjumanError(errors.NETWORK, str(e) or type(e).__name__) from e
-
-    def complete(self, request: Request | str, messages: list[Message] | None = None,
-                 **kw: Any) -> Message:
-        for ev in self.stream(request, messages, **kw):
-            if isinstance(ev, Finish):
-                return ev.message
-        raise errors.TarjumanError(errors.SERVER_ERROR, "stream ended without a finish")
+    def _error(self, status: int, body: str, retry_after: str | None) -> errors.TarjumanError:
+        return _http_error(status, body, retry_after)
 
     # --- neutral -> wire ---------------------------------------------------------------------
 

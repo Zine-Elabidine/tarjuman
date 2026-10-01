@@ -10,6 +10,7 @@ from . import errors
 from .anthropic import Anthropic
 from .catalog import providers_table
 from .openai_chat import OpenAIChat
+from .provider import App
 
 PROTOCOLS: dict[str, type] = {"openai-chat": OpenAIChat, "anthropic-messages": Anthropic}
 # compat-table keys that are passed to the protocol's constructor as they are
@@ -22,9 +23,10 @@ def names() -> list[str]:
 
 
 def connect(name: str, *, api_key: str | None = None, base_url: str | None = None,
-            **kw: Any) -> OpenAIChat | Anthropic:
+            app: App | None = None, **kw: Any) -> OpenAIChat | Anthropic:
     """A client for a provider in the compat table. `base_url` points it elsewhere (a gateway
-    speaking the same protocol); keyword arguments override the table's quirks."""
+    speaking the same protocol); `app` names the application to providers that show it;
+    keyword arguments override the table's quirks."""
     row = providers_table().get(name)
     if row is None:
         raise errors.TarjumanError(errors.INVALID_REQUEST,
@@ -34,6 +36,9 @@ def connect(name: str, *, api_key: str | None = None, base_url: str | None = Non
         where = f" ({row['key_url']})" if row.get("key_url") else ""
         raise errors.TarjumanError(errors.INVALID_CREDENTIAL, f"set {row['key_env']}{where}")
     quirks = {k: row[k] for k in _QUIRKS if k in row}
+    if app:
+        named = {h: getattr(app, field) for h, field in (row.get("app_headers") or {}).items()}
+        quirks["headers"] = {**{h: v for h, v in named.items() if v}, **quirks.get("headers", {})}
     cls = PROTOCOLS[row["protocol"]]
     url = base_url or row["base_url"]
     args = {"provider": name, "catalog": row.get("catalog"), **quirks, **kw}
