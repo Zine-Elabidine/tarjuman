@@ -1,5 +1,7 @@
 """Tarjuman: one neutral language for every LLM provider."""
 
+from importlib.metadata import version
+
 from . import limits
 from .anthropic import Anthropic
 from .cancel import Cancel
@@ -10,7 +12,7 @@ from .transform import Target, prepare
 from .types import (Block, Image, Message, Reasoning, Replay, Request, Text, Tool, ToolCall,
                     ToolResult, Unknown, Usage)
 
-__version__ = "0.1.0"
+__version__ = version("tarjuman")   # one source: pyproject.toml
 
 __all__ = ["Anthropic", "Block", "BlockEnd", "BlockStart", "Cancel", "Event", "Finish", "Image",
            "Message", "OpenAIChat", "Reasoning", "ReasoningDelta", "Replay", "Request", "Target",
