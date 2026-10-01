@@ -185,6 +185,10 @@ class Message:
     def tool_calls(self) -> list[ToolCall]:
         return [b for b in self.content if isinstance(b, ToolCall)]
 
+    @property
+    def tool_results(self) -> list[ToolResult]:
+        return [b for b in self.content if isinstance(b, ToolResult)]
+
     def to_dict(self) -> dict[str, Any]:
         d: dict[str, Any] = {"v": VERSION, "role": self.role,
                              "content": [block_to_dict(b) for b in self.content]}
