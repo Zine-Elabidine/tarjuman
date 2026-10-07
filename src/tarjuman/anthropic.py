@@ -19,7 +19,7 @@ import httpx
 
 from . import catalog, errors
 from .events import BlockEnd, BlockStart, Event, Finish, ReasoningDelta, TextDelta, ToolCallDelta
-from .provider import HTTPProvider
+from .provider import STALL, HTTPProvider
 from .transform import prepare
 from .types import (Image, Message, Reasoning, Replay, Request, Stop, Text, Tool, ToolCall,
                     ToolResult, Unknown, Usage)
@@ -57,7 +57,7 @@ class Anthropic(HTTPProvider):
                  thinking: str = "adaptive", default_max_tokens: int = 8192,
                  vision: bool = True, load_image: Callable[[str], str] | None = None,
                  catalog: str | None = None, timeout: float = 600,
-                 client: httpx.Client | None = None):
+                 client: httpx.Client | None = None, stall: float | None = STALL):
         """thinking: "adaptive" (effort levels) or "budget", for models the catalog doesn't
         know; the catalog decides per model otherwise.
         default_max_tokens: Anthropic requires max_tokens; used when the request has none
@@ -67,7 +67,7 @@ class Anthropic(HTTPProvider):
         if api_key:
             h["x-api-key"] = api_key
         super().__init__(base_url, provider, h, vision=vision, load_image=load_image,
-                         catalog=catalog, timeout=timeout, client=client)
+                         catalog=catalog, timeout=timeout, client=client, stall=stall)
         self.thinking = thinking
         self.default_max_tokens = default_max_tokens
 

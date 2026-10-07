@@ -11,7 +11,7 @@ import httpx
 
 from . import catalog, errors
 from .events import BlockEnd, BlockStart, Event, Finish, ReasoningDelta, TextDelta, ToolCallDelta
-from .provider import HTTPProvider
+from .provider import STALL, HTTPProvider
 from .transform import prepare
 from .types import (Image, Message, Reasoning, Replay, Request, Stop, Text, Tool, ToolCall,
                     ToolResult, Usage)
@@ -48,7 +48,8 @@ class OpenAIChat(HTTPProvider):
                  reasoning_style: str | None = None, reasoning_field: str | None = None,
                  vision: bool = True, load_image: Callable[[str], str] | None = None,
                  catalog: str | None = None, cache_control: bool | list[str] = False,
-                 timeout: float = 600, client: httpx.Client | None = None):
+                 timeout: float = 600, client: httpx.Client | None = None,
+                 stall: float | None = STALL):
         """Provider quirks are arguments, filled from data/providers.json by providers.connect.
         reasoning_style: how to request a reasoning level ("openai", "openrouter", "deepseek").
         reasoning_field: send the model's own reasoning back under this field; None = the
@@ -62,7 +63,7 @@ class OpenAIChat(HTTPProvider):
         if api_key:
             h["Authorization"] = f"Bearer {api_key}"
         super().__init__(base_url, provider, h, vision=vision, load_image=load_image,
-                         catalog=catalog, timeout=timeout, client=client)
+                         catalog=catalog, timeout=timeout, client=client, stall=stall)
         self.max_tokens_field = max_tokens_field
         self.reasoning_style = reasoning_style
         self.reasoning_field = reasoning_field

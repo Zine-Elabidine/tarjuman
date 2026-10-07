@@ -19,6 +19,8 @@ from .transform import Target
 from .types import Message, Request, Tool
 
 
+STALL = 120.0   # seconds without a byte before a stream counts as stalled (HTTPProvider)
+
 class Provider(Protocol):
     """What a caller (an agent loop, a test fake) can rely on, whatever the protocol."""
     provider: str
@@ -54,14 +56,18 @@ class HTTPProvider:
 
     def __init__(self, base_url: str, provider: str, headers: dict[str, str], *, vision: bool,
                  load_image: Callable[[str], str] | None, catalog: str | None, timeout: float,
-                 client: httpx.Client | None):
+                 client: httpx.Client | None, stall: float | None = STALL):
         self.base_url = base_url.rstrip("/")
         self.provider = provider
         self.vision = vision
         self.load_image = load_image
         self.catalog = catalog
         self._headers = {"Content-Type": "application/json", **headers}
-        self._client = client or httpx.Client(timeout=httpx.Timeout(timeout, connect=30))
+        # `stall`: the longest wait for the next bytes of a stream. Hosted APIs send something
+        # every few seconds (tokens, pings, keep-alive comments), so a longer silence is a stalled
+        # connection: it fails as NETWORK (retried) instead of hanging until `timeout`
+        read = min(stall, timeout) if stall else timeout
+        self._client = client or httpx.Client(timeout=httpx.Timeout(timeout, connect=30, read=read))
         self._windows: dict[str, int] | None = None  # from the server's /models, when asked
 
     # --- what the protocol supplies ----------------------------------------------------------

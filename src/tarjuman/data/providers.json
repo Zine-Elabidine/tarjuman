@@ -54,6 +54,8 @@
     "key_env": "LOCAL_API_KEY",
     "key_optional": true,
     "catalog": null,
-    "_sources": {"about": "vLLM, llama.cpp server, LM Studio, Ollama's OpenAI endpoint, or any gateway (Bifrost, LiteLLM proxy)"}
+    "stall": null,
+    "_sources": {"about": "vLLM, llama.cpp server, LM Studio, Ollama's OpenAI endpoint, or any gateway (Bifrost, LiteLLM proxy)",
+                 "stall": "a local server sends nothing while it reads a long prompt (minutes on a CPU): only the overall timeout applies"}
   }
 }
