@@ -9,11 +9,13 @@
     "catalog": "openrouter",
     "app_headers": {"HTTP-Referer": "url", "X-Title": "name"},
     "reasoning_style": "openrouter",
+    "stall": 120,
     "cache_control": ["anthropic/", "qwen/"],
     "_sources": {"app_headers": "OpenRouter app attribution docs: HTTP-Referer is the app's URL, X-Title its name; both optional",
                  "cache_control": "OpenRouter prompt-caching docs: Anthropic and Qwen cache only at cache_control breakpoints; OpenAI, DeepSeek, Grok, Moonshot, Groq, Z.AI cache automatically. Measured 2026-09-30 (10k-token prompt, tool loop): claude-haiku-4.5 step $0.0012 vs ~$0.0105, qwen3-coder-flash $0.00022 vs $0.00044. Gemini left out: explicit breakpoints write a new cache every request (gemini-3.1-flash-lite $0.0038 vs $0.0027 without); its implicit caching is automatic",
                  "reasoning_style": "OpenRouter docs: reasoning {effort | enabled}; pi-ai thinkingFormat 'openrouter'",
-                 "reasoning_details": "handled by the openai-chat translator for every provider (OpenRouter, Bifrost)"}
+                 "reasoning_details": "handled by the openai-chat translator for every provider (OpenRouter, Bifrost)",
+                 "stall": "OpenRouter streaming docs: ': OPENROUTER PROCESSING' comments keep the stream alive; a 5-minute silent hang was seen 2026-10-07. OpenAI direct is left without: silence before the first token is not verified there"}
   },
 
   "openai": {
@@ -34,7 +36,9 @@
     "key_env": "ANTHROPIC_API_KEY",
     "key_url": "https://console.anthropic.com",
     "catalog": "anthropic",
-    "_sources": {"thinking": "effort vs budget per model from models.dev reasoning_options"}
+    "stall": 120,
+    "_sources": {"thinking": "effort vs budget per model from models.dev reasoning_options",
+                 "stall": "Anthropic streaming docs: ping events keep the stream alive; 2 minutes of silence = stalled"}
   },
 
   "deepseek": {
@@ -44,7 +48,9 @@
     "key_url": "https://platform.deepseek.com/api_keys",
     "catalog": "deepseek",
     "reasoning_style": "deepseek",
+    "stall": 120,
     "_sources": {"reasoning_style": "pi-ai thinkingFormat 'deepseek': thinking {type: enabled|disabled} + reasoning_effort",
+                 "stall": "DeepSeek API docs: SSE keep-alive comments are sent while a request waits; 2 minutes of silence = stalled",
                  "reasoning_field": "models.dev interleaved.field = reasoning_content (its own reasoning must come back in a tool loop)"}
   },
 
@@ -54,8 +60,6 @@
     "key_env": "LOCAL_API_KEY",
     "key_optional": true,
     "catalog": null,
-    "stall": null,
-    "_sources": {"about": "vLLM, llama.cpp server, LM Studio, Ollama's OpenAI endpoint, or any gateway (Bifrost, LiteLLM proxy)",
-                 "stall": "a local server sends nothing while it reads a long prompt (minutes on a CPU): only the overall timeout applies"}
+    "_sources": {"about": "vLLM, llama.cpp server, LM Studio, Ollama's OpenAI endpoint, or any gateway (Bifrost, LiteLLM proxy)"}
   }
 }

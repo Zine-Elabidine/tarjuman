@@ -1,11 +1,11 @@
-"""A stream that goes silent fails (NETWORK, retried by the caller) instead of hanging."""
+"""A stream that goes silent fails (NETWORK, retried by the caller) instead of hanging, for
+providers known to keep a stream alive; the others wait the whole timeout."""
 
 from tarjuman import providers
-from tarjuman.provider import STALL
 
 
-def test_hosted_providers_give_up_on_a_silent_stream_and_local_ones_wait():
-    hosted = providers.connect("openrouter", api_key="k")
-    assert hosted._client.timeout.read == STALL < hosted._client.timeout.pool
-    local = providers.connect("local")
-    assert local._client.timeout.read == 600
+def test_only_providers_that_send_keep_alives_give_up_on_silence():
+    for name in ("openrouter", "anthropic", "deepseek"):
+        assert providers.connect(name, api_key="k")._client.timeout.read == 120
+    for name in ("openai", "local"):
+        assert providers.connect(name, api_key="k")._client.timeout.read == 600
