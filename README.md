@@ -1,3 +1,5 @@
+![Tarjuman](docs/banner.png)
+
 # Tarjuman
 
 One neutral language for every LLM provider. Send the same conversation to Anthropic,
