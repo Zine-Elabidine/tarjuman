@@ -1,4 +1,4 @@
-![Tarjuman](docs/banner-wide.png)
+![Tarjuman](docs/banner-v3.png)
 
 # Tarjuman
 
