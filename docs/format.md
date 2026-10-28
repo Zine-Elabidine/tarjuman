@@ -104,7 +104,7 @@ Unknown(type, data)                    # a block from a newer version or an unmo
 
 | Role | Allowed blocks |
 |---|---|
-| `system` | `Text` |
+| `system` | `Text`, `ToolsAdded` |
 | `user` | `Text`, `Image` |
 | `assistant` | `Text`, `Reasoning`, `ToolCall` |
 | `tool` | `ToolResult` (one or more) |
@@ -251,7 +251,7 @@ downgrade (Gemini); splitting grouped tool results (OpenAI Chat). All driven by 
 | Files / PDFs as native blocks | only some providers accept them; text/path works everywhere | a `Document` block + placeholder rule |
 | Audio in/out | not needed for a coding agent | new block types |
 | Server-side tools (provider web search, code execution) | provider-specific, not replayable to others | `Unknown` blocks with a `Text` fallback, same-model replay only |
-| Tool list changes mid-session (Anthropic `defer_loading`) | an optimization; decision #6 | system messages with `tools_added` / `tools_removed`, as pi-ai does |
+| Removing a tool mid-session (Anthropic `tool_removal`) | rare; adding is done (§8, decision 5) | a `ToolsRemoved` block, the same way |
 | Stateful APIs (`previous_response_id`) | we always send the full history; the log is the truth | a replay hint only |
 
 ---
@@ -284,6 +284,19 @@ downgrade (Gemini); splitting grouped tool results (OpenAI Chat). All driven by 
    thinking block (0 of 1,108) and append `[Request interrupted by user]`.
    Rejected: A (text only: loses signed reasoning), B (skip: the model loses the context),
    C (native partial blocks: per-provider rules, rejected requests).
+
+5. ✅ **Deferred tools (2026-10-28).** A `Tool` may be `deferred`: sent in every request but
+   hidden from the model until a `ToolsAdded(names)` block, in a system message, says it may
+   be called from there on. The caller always sends the same tool list, so loading a tool
+   never changes what came before. Anthropic, on the models that take mid-conversation tool
+   changes and on the official API, sends deferred tools with `defer_loading: true` and turns
+   `ToolsAdded` into a `role: system` message of `tool_addition` blocks (beta
+   `mid-conversation-tool-changes-2026-07-01`), placed where a system message is allowed: after
+   the user's side (tool results, reminders), before the model's turn. The cache holds (a
+   Sonnet 5.5 run: the request after a load read all 7,203 earlier tokens from the cache).
+   Every other protocol, and other Anthropic models or gateways, sends the visible tools only:
+   the shown ones, then the added ones in the order they were added (`visible_tools`), which
+   changes the tool list once per load. A name not sent as a deferred tool is never referenced.
 
 **Rule for Diwan (from 2):** a context injection (budget warning, model switch, tools
 changed, instructions changed, date) is **its own event** in the log, never an edit to a

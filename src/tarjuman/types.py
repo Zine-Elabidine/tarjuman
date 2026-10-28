@@ -83,6 +83,15 @@ class ToolResult:
 
 
 @dataclass
+class ToolsAdded:
+    """In a system message: from here on the model may call these deferred tools (`Tool.deferred`).
+    Anthropic says so in place (`tool_addition`), so the tools sent never change and the cache
+    holds; other protocols send the tools themselves from then on (`visible_tools`)."""
+    names: list[str]
+    type: Literal["tools_added"] = "tools_added"
+
+
+@dataclass
 class Unknown:
     """A block this version doesn't know: from a newer Tarjuman, or a provider block we don't
     model. Kept and saved back unchanged; never sent to a model."""
@@ -91,13 +100,14 @@ class Unknown:
     type: Literal["unknown"] = "unknown"
 
 
-Block = Text | Reasoning | Image | ToolCall | ToolResult | Unknown
+Block = Text | Reasoning | Image | ToolCall | ToolResult | ToolsAdded | Unknown
 _BLOCKS: dict[str, type] = {"text": Text, "reasoning": Reasoning, "image": Image,
-                            "tool_call": ToolCall, "tool_result": ToolResult}
+                            "tool_call": ToolCall, "tool_result": ToolResult,
+                            "tools_added": ToolsAdded}
 
 # which blocks each role may carry
 ALLOWED: dict[str, tuple[type, ...]] = {
-    "system": (Text,),
+    "system": (Text, ToolsAdded),
     "user": (Text, Image),
     "assistant": (Text, Reasoning, ToolCall),
     "tool": (ToolResult,),
@@ -217,11 +227,34 @@ class Message:
 
 @dataclass
 class Tool:
-    """A tool the model may call. `parameters` is a JSON Schema object."""
+    """A tool the model may call. `parameters` is a JSON Schema object.
+    deferred: sent in every request but hidden from the model until a `ToolsAdded` block in
+    the messages names it (so loading it changes nothing before that point)."""
     name: str
     description: str
     parameters: dict[str, Any]
     strict: bool = False
+    deferred: bool = False
+
+
+def added_tools(messages: list[Message]) -> list[str]:
+    """The tools the messages' `ToolsAdded` blocks name, in the order they were first added."""
+    out: list[str] = []
+    for m in messages:
+        for b in m.content:
+            if isinstance(b, ToolsAdded):
+                out += [n for n in b.names if n not in out]
+    return out
+
+
+def visible_tools(tools: list[Tool] | None, messages: list[Message]) -> list[Tool]:
+    """What the model sees, for a protocol that can't hide tools: every tool that isn't
+    deferred, then the deferred ones added so far, in the order they were added."""
+    if not tools:
+        return []
+    deferred = {t.name: t for t in tools if t.deferred}
+    return ([t for t in tools if not t.deferred]
+            + [deferred[n] for n in added_tools(messages) if n in deferred])
 
 
 @dataclass

@@ -7,12 +7,17 @@ What differs from OpenAI Chat, all handled here:
 - tool arguments are JSON objects, not strings
 - prompt caching is explicit: `cache_control` breakpoints on the last tool, the system
   prompt and the newest message
-- `max_tokens` is required"""
+- `max_tokens` is required
+- deferred tools: on models that take mid-conversation tool changes, every tool is sent from
+  the start (deferred ones with `defer_loading`) and a `ToolsAdded` becomes a system message
+  of `tool_addition` blocks, so the tools never change and the cache holds; elsewhere the
+  added tools are simply sent from then on (visible_tools)"""
 
 from __future__ import annotations
 
 import json
 from collections.abc import Callable, Iterator
+from dataclasses import replace
 from typing import Any
 
 import httpx
@@ -20,13 +25,19 @@ import httpx
 from . import catalog, errors
 from .events import BlockEnd, BlockStart, Event, Finish, ReasoningDelta, TextDelta, ToolCallDelta
 from .provider import HTTPProvider
-from .transform import prepare
+from .transform import Target, prepare
 from .types import (Image, Message, Reasoning, Replay, Request, Stop, Text, Tool, ToolCall,
-                    ToolResult, Unknown, Usage)
+                    ToolResult, ToolsAdded, Unknown, Usage, visible_tools)
 
 PROTOCOL = "anthropic-messages"
 API_VERSION = "2023-06-01"
 ID_PATTERN = r"[a-zA-Z0-9_-]{1,64}"
+OFFICIAL = "https://api.anthropic.com"
+TOOL_CHANGES_BETA = "mid-conversation-tool-changes-2026-07-01"
+# the models that take mid-conversation tool changes (a `role: system` message elsewhere is a
+# 400); prefixes, so dated and newer point versions match. Not Sonnet 5, not Haiku.
+TOOL_CHANGES_MODELS = ("claude-opus-5", "claude-opus-4-8", "claude-fable-5", "claude-mythos-5",
+                       "claude-sonnet-5-5")
 
 _STOPS: dict[str, Stop] = {"end_turn": "end", "stop_sequence": "end", "tool_use": "tool_use",
           "max_tokens": "max_tokens", "model_context_window_exceeded": "max_tokens",
@@ -57,9 +68,12 @@ class Anthropic(HTTPProvider):
                  thinking: str = "adaptive", default_max_tokens: int = 8192,
                  vision: bool = True, load_image: Callable[[str], str] | None = None,
                  catalog: str | None = None, timeout: float = 600,
-                 client: httpx.Client | None = None, stall: float | None = None):
+                 client: httpx.Client | None = None, stall: float | None = None,
+                 tool_changes: bool | None = None):
         """thinking: "adaptive" (effort levels) or "budget", for models the catalog doesn't
         know; the catalog decides per model otherwise.
+        tool_changes: whether deferred tools are added in place (tool_addition); None: on the
+            official API, for the models known to take it (a gateway may not pass it on).
         default_max_tokens: Anthropic requires max_tokens; used when the request has none
             (capped by the model's own output limit when the catalog knows it).
         catalog: the models.dev provider id to look models up in."""
@@ -70,15 +84,29 @@ class Anthropic(HTTPProvider):
                          catalog=catalog, timeout=timeout, client=client, stall=stall)
         self.thinking = thinking
         self.default_max_tokens = default_max_tokens
+        self.tool_changes = tool_changes
+
+    def target(self, model: str) -> Target:
+        t = super().target(model)
+        native = (self.tool_changes if self.tool_changes is not None else
+                  self.base_url == OFFICIAL and model.startswith(TOOL_CHANGES_MODELS))
+        return replace(t, tool_changes=native)
 
     # --- request ---------------------------------------------------------------------------
 
     def body(self, req: Request) -> dict[str, Any]:
         cache = None if req.cache == "none" else (
             {"type": "ephemeral", "ttl": "1h"} if req.cache == "long" else {"type": "ephemeral"})
-        messages = prepare(req.messages, self.target(req.model))
-        system = [m.text for m in messages if m.role == "system"]
-        turns = _merge([self._to_wire(m) for m in messages if m.role != "system"])
+        target = self.target(req.model)
+        messages = prepare(req.messages, target)
+        # the leading system message is the prompt; later ones only add tools (tool_changes)
+        lead = 0
+        while lead < len(messages) and messages[lead].role == "system":
+            lead += 1
+        system = [m.text for m in messages[:lead] if m.text]
+        tools = (req.tools or []) if target.tool_changes else visible_tools(req.tools, req.messages)
+        deferred = {t.name for t in tools if t.deferred and target.tool_changes}
+        turns = _merge([self._to_wire(m, deferred) for m in messages[lead:]])
 
         info = self.info(req.model)
         default = (min(self.default_max_tokens, info.max_output) if info and info.max_output
@@ -87,8 +115,8 @@ class Anthropic(HTTPProvider):
                                 "max_tokens": req.max_tokens or default}
         if system:
             body["system"] = [{"type": "text", "text": t} for t in system]
-        if req.tools:
-            body["tools"] = [_tool(t) for t in req.tools]
+        if tools:
+            body["tools"] = [_tool(t, t.name in deferred) for t in tools]
             if req.tool_choice != "auto":
                 body["tool_choice"] = (
                     {"type": "tool", "name": req.tool_choice["name"]}
@@ -142,7 +170,17 @@ class Anthropic(HTTPProvider):
 
     # --- neutral -> wire ---------------------------------------------------------------------
 
-    def _to_wire(self, m: Message) -> dict[str, Any]:
+    def headers(self, body: dict[str, Any]) -> dict[str, str]:
+        if not any(t.get("defer_loading") for t in body.get("tools") or []):
+            return self._headers
+        beta = ",".join(b for b in (self._headers.get("anthropic-beta"), TOOL_CHANGES_BETA) if b)
+        return {**self._headers, "anthropic-beta": beta}
+
+    def _to_wire(self, m: Message, deferred: set[str]) -> dict[str, Any]:
+        if m.role == "system":   # only ToolsAdded gets here; never a name not sent as deferred
+            return {"role": "system", "content": [
+                {"type": "tool_addition", "tool": {"type": "tool_reference", "name": n}}
+                for b in m.content if isinstance(b, ToolsAdded) for n in b.names if n in deferred]}
         if m.role == "tool":
             return {"role": "user", "content": [
                 {"type": "tool_result", "tool_use_id": b.call_id, "is_error": b.is_error,
@@ -207,22 +245,27 @@ def _merge(turns: list[dict[str, Any]]) -> list[dict[str, Any]]:
 
 def _mark_cache(body: dict[str, Any], cache: dict[str, str]) -> None:
     """Breakpoints on the last tool, the last system block and the newest message: everything
-    before each one is cached, and the next request finds it by walking back."""
-    if body.get("tools"):
-        body["tools"][-1]["cache_control"] = cache
+    before each one is cached, and the next request finds it by walking back. Not on deferred
+    tools nor on a tool_addition message: on the last tool / message before them."""
+    shown = [t for t in body.get("tools") or [] if not t.get("defer_loading")]
+    if shown:
+        shown[-1]["cache_control"] = cache
     if body.get("system"):
         body["system"][-1]["cache_control"] = cache
-    if body["messages"]:
-        last = body["messages"][-1]["content"][-1]
+    turns = [t for t in body["messages"] if t["role"] != "system"]
+    if turns:
+        last = turns[-1]["content"][-1]
         if last["type"] in ("text", "image", "tool_result", "tool_use"):
             last["cache_control"] = cache
 
 
-def _tool(t: Tool) -> dict[str, Any]:
+def _tool(t: Tool, deferred: bool = False) -> dict[str, Any]:
     d: dict[str, Any] = {"name": t.name, "description": t.description,
                          "input_schema": t.parameters or {"type": "object", "properties": {}}}
     if t.strict:
         d["strict"] = True
+    if deferred:
+        d["defer_loading"] = True
     return d
 
 

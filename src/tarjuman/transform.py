@@ -9,7 +9,8 @@ import hashlib
 import re
 from dataclasses import dataclass, replace
 
-from .types import ALLOWED, Block, Image, Message, Reasoning, Replay, Text, ToolCall, ToolResult
+from .types import (ALLOWED, Block, Image, Message, Reasoning, Replay, Text, ToolCall, ToolResult,
+                    ToolsAdded)
 
 NO_RESULT = "No result: the call was interrupted before it ran."
 NO_VISION = "(image omitted: this model does not accept images)"
@@ -24,6 +25,7 @@ class Target:
     model: str
     vision: bool = True           # unknown models are assumed to accept images
     id_pattern: str | None = None  # tool-call ids must match this (e.g. Anthropic's)
+    tool_changes: bool = False     # takes `ToolsAdded` in place (Anthropic's tool_addition)
 
 
 def same_model(m: Message, t: Target) -> bool:
@@ -37,6 +39,7 @@ def prepare(messages: list[Message], target: Target) -> list[Message]:
     open_calls: dict[str, str] = {}    # unanswered call id -> tool name
     names: dict[str, str] = {}         # every sent call id -> tool name
     held: list[Message] = []           # reminders waiting for open calls to be answered
+    added: list[str] = []              # tools added, waiting for the end of the user's side
 
     def close() -> None:
         if open_calls:
@@ -46,8 +49,18 @@ def prepare(messages: list[Message], target: Target) -> list[Message]:
         out.extend(held)
         held.clear()
 
+    def tell_added() -> None:
+        # a system message may only follow the user's side (a user or tool message) and be
+        # followed by the model's turn: so just before the next assistant message, or last
+        if added and out and out[-1].role in ("user", "tool"):
+            out.append(Message("system", [ToolsAdded(list(added))]))
+            added.clear()
+
     for m in messages:
         if m.role == "system":
+            if target.tool_changes:
+                added.extend(n for b in m.content if isinstance(b, ToolsAdded)
+                             for n in b.names if n not in added)
             text = _text_only(m)
             if not text:
                 continue
@@ -67,6 +80,7 @@ def prepare(messages: list[Message], target: Target) -> list[Message]:
             a = _assistant(m, target, ids)
             if a is None:
                 continue
+            tell_added()
             out.append(a)
             for c in a.tool_calls:
                 open_calls[c.id] = c.name
@@ -98,6 +112,7 @@ def prepare(messages: list[Message], target: Target) -> list[Message]:
                 out.append(Message("user", blocks))
 
     close()
+    tell_added()
     return out
 
 

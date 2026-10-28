@@ -11,12 +11,12 @@ from .openai_chat import OpenAIChat
 from .provider import App, HTTPProvider, Provider
 from .transform import Target, prepare
 from .types import (Block, Image, Message, Reasoning, Replay, Request, Text, Tool, ToolCall,
-                    ToolResult, Unknown, Usage)
+                    ToolResult, ToolsAdded, Unknown, Usage, added_tools, visible_tools)
 
 __version__ = version("tarjuman")   # one source: pyproject.toml
 
 __all__ = ["Anthropic", "App", "Block", "BlockEnd", "BlockStart", "Cancel", "Event", "Finish",
            "HTTPProvider", "Image", "Message", "OpenAIChat", "Provider", "Reasoning",
            "ReasoningDelta", "Replay", "Request", "Target", "TarjumanError", "Text", "TextDelta",
-           "Tool", "ToolCall", "ToolCallDelta", "ToolResult", "Unknown", "Usage", "prepare",
-           "tokens"]
+           "Tool", "ToolCall", "ToolCallDelta", "ToolResult", "ToolsAdded", "Unknown", "Usage",
+           "added_tools", "prepare", "tokens", "visible_tools"]

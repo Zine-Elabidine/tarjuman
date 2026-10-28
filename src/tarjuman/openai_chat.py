@@ -14,7 +14,7 @@ from .events import BlockEnd, BlockStart, Event, Finish, ReasoningDelta, TextDel
 from .provider import HTTPProvider
 from .transform import prepare
 from .types import (Image, Message, Reasoning, Replay, Request, Stop, Text, Tool, ToolCall,
-                    ToolResult, Usage)
+                    ToolResult, Usage, visible_tools)
 
 PROTOCOL = "openai-chat"
 
@@ -83,8 +83,9 @@ class OpenAIChat(HTTPProvider):
             "stream": True,
             "stream_options": {"include_usage": True},
         }
-        if req.tools:
-            body["tools"] = [_tool(t) for t in req.tools]
+        tools = visible_tools(req.tools, req.messages)   # deferred ones once added
+        if tools:
+            body["tools"] = [_tool(t) for t in tools]
             if req.tool_choice != "auto":
                 body["tool_choice"] = (req.tool_choice if isinstance(req.tool_choice, str) else
                                        {"type": "function",

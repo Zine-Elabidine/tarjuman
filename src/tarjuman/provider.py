@@ -77,6 +77,10 @@ class HTTPProvider:
     def _parse(self, model: str, lines: Iterator[str]) -> Iterator[Event]:
         raise NotImplementedError
 
+    def headers(self, body: dict[str, Any]) -> dict[str, str]:
+        """The headers for one request (a protocol adds a beta flag a body needs)."""
+        return self._headers
+
     def _error(self, status: int, body: str, retry_after: str | None) -> errors.TarjumanError:
         return errors.from_http(status, body, retry_after)
 
@@ -122,7 +126,7 @@ class HTTPProvider:
             return
         try:
             with self._client.stream("POST", self.base_url + self.path,
-                                     headers=self._headers, json=body) as r:
+                                     headers=self.headers(body), json=body) as r:
                 if token:  # closing the response is what stops the provider generating
                     token.on_cancel(r.close)
                 if r.status_code >= 400:

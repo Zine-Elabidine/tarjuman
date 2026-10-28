@@ -13,7 +13,7 @@ import json
 
 import httpx
 
-from .types import Image, Message, Reasoning, Text, Tool, ToolCall, ToolResult
+from .types import Image, Message, Reasoning, Text, Tool, ToolCall, ToolResult, visible_tools
 
 CHARS_PER_TOKEN = 3.0     # code, JSON and tool output (measured 2.5-3.1); prose is nearer 4
 IMAGE_TOKENS = 1_000      # a mid-size image on most providers
@@ -55,7 +55,7 @@ def chars(messages: list[Message], tools: list[Tool] | None = None) -> int:
                 n += len(b.name) + len(b.arguments)
             elif isinstance(b, ToolResult):
                 n += sum(len(c.text) for c in b.content if isinstance(c, Text))
-    for t in tools or []:
+    for t in visible_tools(tools, messages):   # a deferred tool counts once it is added
         n += len(t.name) + len(t.description) + len(json.dumps(t.parameters))
     return n
 
